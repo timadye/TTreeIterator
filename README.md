@@ -9,13 +9,13 @@ The classes currently behave like smart pointers onto an underlying TTree.
 
 Construct the tree using a `RooAbsPdf` (or `RooStats::ModelConfg`):
 
-```
+```asm
 RooFitResultTree frt("myFits", myPdf);
 ```
 
 And then perform a fit to the pdf using data and global observables:
 
-```
+```asm
 std::shared_ptr<RooFitResult> fr = frt.fitTo(data,globs);
 ```
 
@@ -46,7 +46,7 @@ When constructing the tree using a `ModelConfig` the NP and POI are used as the 
 
 Prior fits can be obtained with:
 
-```
+```asm
 std::shared_ptr<RooFitResult> fr = frt.GetFit(entryNumber);
 ```
 
@@ -55,7 +55,7 @@ std::shared_ptr<RooFitResult> fr = frt.GetFit(entryNumber);
 
 Generates toy or expected datasets for a given pdf:
 
-```
+```asm
 RooDataTree dt("myToys", myPdf);
 ```
 
