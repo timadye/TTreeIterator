@@ -23,6 +23,27 @@ The `RooFitResultTree` retains fit configuration metadata (in the `UserInfo` of 
 a `TRef` to the pdf, and what RooFit options are used to construct the NLL. The tree ensures 
 all fits in the tree are performed with the same fit configuration.
 
+An important feature of the `RooFitResultTree` is that at the time of the first fit the
+list of variable (i.e. floatable) parameters is decided. All other parameters are marked as constants and 
+will always be held constant as such in subsequent fits with this tree. For this reason it is important 
+to declare which parameters you want to be considered as variable and which are fixed.
+You can see the list of variable parameters for the tree with:
+
+```asm
+frt.Print() // lists model, variables, and fit config
+```
+
+If the variables have not yet been defined, you can define them using `SetParameters` with either and explicit
+list of parameters or by passing a dataset and global observable list to let it determine the parameters from the model:
+
+````asm
+frt.SetParameters(data,globs);
+frt.SetParameters(parList); // alternative
+````
+
+The constant parameters are taken as `arugments` and the non-constant ones are the `variables`. 
+When constructing the tree using a `ModelConfig` the NP and POI are used as the variable parameters.
+
 Prior fits can be obtained with:
 
 ```
