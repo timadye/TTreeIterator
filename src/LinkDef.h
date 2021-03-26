@@ -5,3 +5,4 @@
 #pragma link C++ class RooFitResultTree+;
 #pragma link C++ class RooDataTree+;
 #pragma link C++ class RooFitTaskTree+;
+#pragma link C++ class TTreeIterator+;
