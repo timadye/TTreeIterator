@@ -11,6 +11,7 @@
 #include "TDirectory.h"
 #include "TTree.h"
 #include "TError.h"
+#include "TRandom.h"
 
 class TTreeIterator : public TNamed {
 public:
@@ -42,7 +43,7 @@ public:
   class Getter {
   public:
     Getter(const TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
-    template <typename T> operator T() const { return fEntry.get<T>(fName); }
+    template <typename T>    operator T() const       { return fEntry.Get<T>(fName);      }
 //  template <typename T> T operator+ (const T& v) const { return T(*this) +  v; }
 //  template <typename T> T operator+=(const T& v)       { return T(*this) += v; }
   private:
@@ -50,18 +51,30 @@ public:
     const char* fName;
   };
 
+  class Setter {
+  public:
+    Setter(      TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
+    template <typename T>          operator T() const       { return fEntry.Get<T>(fName);      }
+    template <typename T> const T& operator= (const T& val) { return fEntry.Set<T>(fName, val); }
+//  template <typename T> T operator+ (const T& v) const { return T(*this) +  v; }
+//  template <typename T> T operator+=(const T& v)       { return T(*this) += v; }
+  private:
+    TTreeIterator& fEntry;
+    const char* fName;
+  };
+
   // Constructors and destructors
   TTreeIterator (const char* name="", int verbose=0)
     : TNamed(name, ""),
-      fTree(nullptr),
+      fTree(new TTree(name,"")),
       fIndex(0),
       fVerbose(verbose) {}
-  TTreeIterator(TObject* tree, int verbose=0)
+  TTreeIterator (TTree* tree, int verbose=0)
     : TNamed(tree ? tree->GetName() : "", tree ? tree->GetTitle() : ""),
-      fTree(dynamic_cast<TTree*>(tree)),
-      fIndex(0),
+      fTree(tree),
+      fIndex(tree ? tree->GetEntries() : 0),
       fVerbose(verbose) {}
-  TTreeIterator(const char* keyname, TDirectory* dir, int verbose=0)
+  TTreeIterator (const char* keyname, TDirectory* dir, int verbose=0)
     : TNamed(keyname, ""),
       fTree(nullptr),
       fIndex(0),
@@ -71,8 +84,10 @@ public:
     dir->GetObject(keyname, fTree);
     if (!fTree)
       Error("TTreeIterator", "TTree '%s' not found in file.", keyname);
-    else
+    else {
       SetTitle(fTree->GetTitle());
+      fIndex = fTree->GetEntries();
+    }
   }
 //~TTreeIterator() override {}   // default probably OK
 
@@ -104,6 +119,11 @@ public:
   void Browse(TBrowser* b) override {
     if (fTree) fTree->Browse(b);
   }
+  virtual Int_t Fill() {
+    if (!fTree) return 0;
+    fIndex++;
+    return fTree->Fill();
+  }
 
   // Accessors
   TTreeIterator& setIndex   (Long64_t index) { fIndex   = index;   return *this; }
@@ -124,24 +144,62 @@ public:
   }
 
   // Access to the current entry
-  Getter get        (const char* name) const { return Getter(*this,name); }
+  Getter Get        (const char* name) const { return Getter(*this,name); }
   Getter operator[] (const char* name) const { return Getter(*this,name); }
+  Setter operator[] (const char* name)       { return Setter(*this,name); }   // Setter can also do Get for non-const this
 
   template <typename T>
-  T get(const char* name, T val=tdefault<T>()) const {
+  const T& Set(const char* name, const T& val, Int_t bufsize=32000, Int_t splitlevel=99) {
     if (!fTree) {
-      if (fVerbose >= 0) Error (tname<T>("get"), "no tree available");
+      if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
       return val;
     }
     TBranch* branch = fTree->GetBranch(name);
     if (!branch) {
-      if (fVerbose >= 0) Error (tname<T>("get"), "branch '%s' not found", name);
+      branch = fTree->Branch (name, const_cast<T*>(&val), bufsize, splitlevel);
+      if (!branch) {
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch for '%s'", name);
+        return val;
+      }
+      if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' created and set for entry %lld", name, fIndex);
+    } else {
+      TClass* expectedClass = 0;
+      EDataType expectedType = kOther_t;
+      if (branch->GetExpectedType (expectedClass, expectedType)) {
+        if (fVerbose >= 0) Error (tname<T>("Set"), "GetExpectedType failed for branch '%s'", name);
+        return val;
+      }
+      Int_t stat=0;
+      if (expectedClass) {
+        T* pval = const_cast<T*>(&val);
+        stat = fTree->SetBranchAddress (name, &pval);
+      } else {
+        stat = fTree->SetBranchAddress (name, const_cast<T*>(&val));
+      }
+      if (stat < 0) {
+        if (fVerbose >= 0) Error (tname<T>("Set"), "%s SetBranchAddress failed for branch '%s'", (expectedClass?"Object":"Type"), name);
+        return val;
+      }
+      if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' set for entry %lld", name, fIndex);
+    }
+    return val;
+  }
+
+  template <typename T>
+  T Get(const char* name, T val=tdefault<T>()) const {
+    if (!fTree) {
+      if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
+      return val;
+    }
+    TBranch* branch = fTree->GetBranch(name);
+    if (!branch) {
+      if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
       return val;
     }
     TClass* expectedClass = 0;
     EDataType expectedType = kOther_t;
     if (branch->GetExpectedType (expectedClass, expectedType)) {
-      if (fVerbose >= 0) Error (tname<T>("get"), "GetExpectedType failed for branch '%s'", name);
+      if (fVerbose >= 0) Error (tname<T>("Get"), "GetExpectedType failed for branch '%s'", name);
       return val;
     }
     Int_t stat=0;
@@ -152,15 +210,15 @@ public:
       stat = fTree->SetBranchAddress (name, &val);
     }
     if (stat < 0) {
-      if (fVerbose >= 0) Error (tname<T>("get"), "%s SetBranchAddress failed for branch '%s'", (expectedClass?"Object":"Type"), name);
+      if (fVerbose >= 0) Error (tname<T>("Get"), "%s SetBranchAddress failed for branch '%s'", (expectedClass?"Object":"Type"), name);
       return val;
     }
     Int_t nread = branch->GetEntry(fIndex);
     branch->ResetAddress();
     if (nread <= 0) {
-      if (fVerbose >= 0) Error (tname<T>("get"), "GetEntry failed for branch '%s', entry %lld", name, fIndex);
+      if (fVerbose >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, fIndex);
     } else {
-      if (fVerbose >= 1) Info (tname<T>("get"), "branch '%s' read from entry %lld", name, fIndex);
+      if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' read from entry %lld", name, fIndex);
     }
     return val;
   }
@@ -172,6 +230,7 @@ public:
     const char* cname = cl ? cl->GetName() : TDataType::GetTypeName (TDataType::GetType(typeid(T)));
     if (!name || !*name) return cname;
     static std::string ret;  // keep here so the c_str() is still valid at the end (until the next call).
+    ret.clear();
     ret.reserve(strlen(name)+strlen(cname)+3);
     ret = name;
     ret += "<";
