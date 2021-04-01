@@ -6,14 +6,11 @@
 #include <string>
 #include <iterator>
 #include <limits>
-#include <memory>
-#include <list>
+#include <utility>
 
 #include "TDirectory.h"
 #include "TTree.h"
 #include "TError.h"
-
-//#define TTreeIterator_NO_TEMPORARY 1
 
 class TTreeIterator : public TNamed {
 public:
@@ -59,11 +56,7 @@ public:
   public:
     Setter(      TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
     template <typename T>          operator T() const       { return fEntry.Get<T>(fName);      }
-#ifndef TTreeIterator_NO_TEMPORARY
     template <typename T> const T& operator= (const T& val) { return fEntry.Set<T>(fName, val); }
-#else
-    template <typename T> const T& operator= (      T& val) { return fEntry.Set<T>(fName, val); }
-#endif
   private:
     TTreeIterator& fEntry;
     const char* fName;
@@ -130,12 +123,13 @@ public:
   virtual Int_t Fill() {
     if (!fTree) return 0;
     fIndex++;
-    Int_t nbytes = fTree->Fill();
-    fTree->ResetBranchAddresses();
-#ifndef TTreeIterator_NO_TEMPORARY
-    fSet.clear();
-    fSetPtr.clear();
-#endif
+    for (auto& [name,branch] : fBranches) {
+      branch.first->SetBit(kDoNotProcess);  // don't let Fill do anything with our branch
+    }
+    Int_t nbytes = fTree->Fill();           // fill any other branches and do autosave
+    for (auto& [name,branch] : fBranches) {
+      branch.first->ResetBit(kDoNotProcess);
+    }
     return nbytes;
   }
 
@@ -165,42 +159,66 @@ public:
 
 
   template <typename T>
-#ifndef TTreeIterator_NO_TEMPORARY
   const T& Set(const char* name, const T& val, const char* leaflist=0, Int_t bufsize=32000, Int_t splitlevel=99)
-#else
-  // pass val by non-const reference to prevent a temporary being used
-  const T& Set(const char* name,       T& val, const char* leaflist=0, Int_t bufsize=32000, Int_t splitlevel=99)
-#endif
   {
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
       return val;
     }
-    T* pval = SavePtr (val);
-    TBranch* branch = fTree->GetBranch(name);
+    T* pval = const_cast<T*>(&val);  // keep in scope until Filled
+
+    TBranch* branch = nullptr;
+    bool isobj = false;
+    if (auto it = fBranches.find(name); it != fBranches.end()) {
+      branch = it->second.first;
+      isobj  = it->second.second;
+    } else {
+      branch = fTree->GetBranch(name);
+      if (branch)
+        isobj = SaveBranch (name, branch);
+    }
+
     if (!branch) {
       if (fIndex <= 0) {
-        NewBranch<T> (name, pval, leaflist, bufsize, splitlevel);
-        return *pval;
+        branch = NewBranch<T> (name, pval, leaflist, bufsize, splitlevel);
+        FillBranch (branch, name);
+        return val;
       }
-      branch = NewBranch<T> (name, SaveVal<T>(), leaflist, bufsize, splitlevel);
-      for (Long64_t i = 0; i < fIndex; i++) {
-        branch->Fill();
-      }
+      T def = type_default<T>();  // keep in scope until Filled
+      T* pdef = &def;             // keep in scope until Filled
+      branch = NewBranch<T> (name, pdef, leaflist, bufsize, splitlevel);
       if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex);
+      for (Long64_t i = 0; i < fIndex; i++) {
+        FillBranch (branch, name, false);
+      }
+
     } else {
+
       Long64_t n = branch->GetEntries();
-      if (n < fIndex) {
-        // simple types are filled in fTree->Fill(), so this isn't used - so we don't get the defaults.
-        SetBranch<T> (branch, name, SaveVal<T>());
-        for (Long64_t i = n; i < fIndex; i++) {
-          branch->Fill();
-        }
+      if (n == fIndex) {
+        // go straight to SetBranch()
+      } else if (n < fIndex) {
+        T def = type_default<T>();      // keep in scope until Filled
+        T* pdef = &def;                 // keep in scope until Filled
+        void** ppdef = (void**) &pdef;  // keep in scope until Filled
+        SetBranch<T> (branch, name, ppdef, isobj);
         if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex-n);
+        for (Long64_t i = n; i < fIndex; i++) {
+          FillBranch (branch, name, false);
+        }
+      } else if (n == fIndex+1) {
+        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' skip filling entry %lld - already filled", name, fIndex);
+        return val;
+      } else {   // if (n > fIndex+1)
+        if (fVerbose >= 0) Error (tname<T>("Set"), "branch '%s' entry %lld is already %lld ahead of the rest of the tree", name, fIndex, n-(fIndex+1));
+        return val;
       }
     }
-    SetBranch<T> (branch, name, pval);
-    return *pval;
+
+    void** ppval = (void**) &pval;   // keep in scope until Filled
+    SetBranch<T> (branch, name, ppval, isobj);
+    FillBranch (branch, name);
+    return val;
   }
 
   template <typename T>
@@ -247,14 +265,15 @@ public:
   static const char* tname(const char* name=0) {
     TClass* cl = TClass::GetClass<T>();
     const char* cname = cl ? cl->GetName() : TDataType::GetTypeName (TDataType::GetType(typeid(T)));
-    if (!name || !*name) return cname;
+    if (!cname || !*cname) return name ? name : "";
+    if (!name  || !*name)  return cname;
     static std::string ret;  // keep here so the c_str() is still valid at the end (until the next call).
     ret.clear();
-    ret.reserve(strlen(name)+strlen(cname)+3);
+    ret.reserve(strlen(name)+strlen(cname)+2);
     ret = name;
     ret += "<";
     ret += cname;
-    ret += ">";
+//  ret += ">";  // Info("SUB","MSG") prints "STR>: MSG". Let's ballance <> in SUB<CLS>.
     return ret.c_str();
   }
 
@@ -262,81 +281,68 @@ protected:
   template<typename T> static T type_default() { return T(); }
 
   template <typename T>
-  T* SavePtr (const T& val) {
-#ifndef TTreeIterator_NO_TEMPORARY
-    fSet.emplace_back (std::shared_ptr<T>(new T(val), [](void* v){ delete (T*)v; }));
-    T* pval = (T*)fSet.back().get();
-#else
-    T* pval = &val;
-#endif
-    return pval;
-  }
-
-  template <typename T>
-  T* SaveVal (T val=type_default<T>()) {
-    return SavePtr (val);
-  }
-
-  template <typename T>
   TBranch* NewBranch (const char* name, T* pval, const char* leaflist=0, Int_t bufsize=32000, Int_t splitlevel=99) {
     TBranch* branch;
     if (leaflist && *leaflist) {
       branch = fTree->Branch (name, pval, leaflist, bufsize);
       if (!branch) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' for entry %lld", name, leaflist, fIndex);
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s'", name, leaflist);
         return branch;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' created with leaves '%s' for entry %lld", name, leaflist, fIndex);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s' and fill entry %lld", name, leaflist, fIndex);
     } else {
       branch = fTree->Branch (name, pval, bufsize, splitlevel);
       if (!branch) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch for '%s'", name);
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s'", name);
         return branch;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' created and set for entry %lld", name, fIndex);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' and fill entry %lld", name, fIndex);
     }
+    SaveBranch (name, branch);
     return branch;
   }
 
-  template <typename T>
-  bool SetBranch (TBranch* branch, const char* name, T* pval) {
+  bool SaveBranch (const char* name, TBranch* branch) {
     TClass* expectedClass = 0;
     EDataType expectedType = kOther_t;
     if (branch->GetExpectedType (expectedClass, expectedType)) {
-      if (fVerbose >= 0) Error (tname<T>("Set"), "GetExpectedType failed for branch '%s'", name);
+      if (fVerbose >= 0) Error ("Set", "GetExpectedType failed for branch '%s'", name);
       return false;
     }
-    Int_t stat=0;
-    if (expectedClass) {
-#ifndef TTreeIterator_NO_TEMPORARY
-      fSetPtr.push_back (pval);
-      T** ppval = (T**)&fSetPtr.back();
-#else
-      T** ppval = &pval;
-#endif
-      stat = fTree->SetBranchAddress (name, ppval);
-    } else {
-      stat = fTree->SetBranchAddress (name,  pval);
+    fBranches[name] = std::make_pair(branch,bool(expectedClass));
+    return expectedClass;
+  }
+
+  template <typename T>
+  bool SetBranch (TBranch* branch, const char* name, void** ppval, bool isobj) {
+    branch->SetAddress (isobj ? ppval : *ppval);
+    if (fVerbose >= 1) {
+      Info (tname<T>("Set"), "set branch '%s' %s address and fill entry %lld", name, (isobj?"object":"variable"), fIndex);
     }
-    if (stat < 0) {
-      if (fVerbose >= 0) Error (tname<T>("Set"), "%s SetBranchAddress failed for branch '%s'", (expectedClass?"Object":"Type"), name);
-      return false;
-    }
-    if (fVerbose >= 1) Info (tname<T>("Set"), "%s branch '%s' set for entry %lld", (expectedClass?"Object":"Type"), name, fIndex);
     return true;
+  }
+
+  Int_t FillBranch (TBranch* branch, const char* name, bool reset=true) {
+    Int_t nbytes = branch->Fill();
+    if (nbytes > 0) {
+      if (fVerbose >= 2) Info ("Set", "filled branch '%s' with %d bytes", name, nbytes);
+    } else if (nbytes == 0) {
+      if (fVerbose >= 0) Error ("Set", "no data filled in branch '%s'", name);
+    } else {
+      if (fVerbose >= 0) Error ("Set", "error filling branch '%s'", name);
+    }
+    if (reset) {
+      branch->SetAddress (nullptr);
+    }
+    return nbytes;
   }
 
 
   // Member variables
   Long64_t fIndex;
+  std::map<std::string,std::pair<TBranch*,bool> > fBranches;
   TTree* fTree;
   int fVerbose;
-#ifndef TTreeIterator_NO_TEMPORARY
-  // use list (rather than vector) to ensure objects don't change location.
-  // use shared_ptr (rather than unique_ptr) since it supports type-erasure (std::any would be nicer, but only in C++17).
-  std::list<std::shared_ptr<void> > fSet;
-  std::list<void*> fSetPtr;
-#endif
 
   ClassDefOverride(TTreeIterator,0)
 };
