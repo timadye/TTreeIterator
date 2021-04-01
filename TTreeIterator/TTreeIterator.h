@@ -176,60 +176,35 @@ public:
       if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
       return val;
     }
-#ifndef TTreeIterator_NO_TEMPORARY
-    fSet.emplace_back (std::shared_ptr<T>(new T(val), [](void* v){ delete (T*)v; }));
-    T* pval = (T*)fSet.back().get();
-#else
-    T* pval = &val;
-#endif
+    T* pval = SavePtr (val);
     TBranch* branch = fTree->GetBranch(name);
     if (!branch) {
-      if (leaflist && *leaflist) {
-        branch = fTree->Branch (name, pval, leaflist, bufsize);
-        if (!branch) {
-          if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' for entry %lld", name, leaflist, fIndex);
-          return *pval;
-        }
-        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' created with leaves '%s' for entry %lld", name, leaflist, fIndex);
-      } else {
-        branch = fTree->Branch (name, pval, bufsize, splitlevel);
-        if (!branch) {
-          if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch for '%s'", name);
-          return *pval;
-        }
-        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' created and set for entry %lld", name, fIndex);
+      if (fIndex <= 0) {
+        NewBranch<T> (name, pval, leaflist, bufsize, splitlevel);
+        return *pval;
       }
+      branch = NewBranch<T> (name, SaveVal<T>(), leaflist, bufsize, splitlevel);
+      for (Long64_t i = 0; i < fIndex; i++) {
+        branch->Fill();
+      }
+      if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex);
     } else {
-      TClass* expectedClass = 0;
-      EDataType expectedType = kOther_t;
-      if (branch->GetExpectedType (expectedClass, expectedType)) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "GetExpectedType failed for branch '%s'", name);
-        return *pval;
+      Long64_t n = branch->GetEntries();
+      if (n < fIndex) {
+        // simple types are filled in fTree->Fill(), so this isn't used - so we don't get the defaults.
+        SetBranch<T> (branch, name, SaveVal<T>());
+        for (Long64_t i = n; i < fIndex; i++) {
+          branch->Fill();
+        }
+        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex-n);
       }
-      Int_t stat=0;
-      if (expectedClass) {
-#ifndef TTreeIterator_NO_TEMPORARY
-        fSetPtr.push_back (pval);
-        T** ppval = (T**)&fSetPtr.back();
-#else
-        T** ppval = &pval;
-#endif
-        stat = fTree->SetBranchAddress (name, ppval);
-      } else {
-        stat = fTree->SetBranchAddress (name,  pval);
-      }
-      if (stat < 0) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "%s SetBranchAddress failed for branch '%s'", (expectedClass?"Object":"Type"), name);
-        return *pval;
-      }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "%s branch '%s' set for entry %lld", (expectedClass?"Object":"Type"), name, fIndex);
     }
+    SetBranch<T> (branch, name, pval);
     return *pval;
   }
 
-
   template <typename T>
-  T Get(const char* name, T val=tdefault<T>()) const {
+  T Get(const char* name, T val=type_default<T>()) const {
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
       return val;
@@ -284,7 +259,73 @@ public:
   }
 
 protected:
-  template<typename T> static T tdefault() { return T(); }
+  template<typename T> static T type_default() { return T(); }
+
+  template <typename T>
+  T* SavePtr (const T& val) {
+#ifndef TTreeIterator_NO_TEMPORARY
+    fSet.emplace_back (std::shared_ptr<T>(new T(val), [](void* v){ delete (T*)v; }));
+    T* pval = (T*)fSet.back().get();
+#else
+    T* pval = &val;
+#endif
+    return pval;
+  }
+
+  template <typename T>
+  T* SaveVal (T val=type_default<T>()) {
+    return SavePtr (val);
+  }
+
+  template <typename T>
+  TBranch* NewBranch (const char* name, T* pval, const char* leaflist=0, Int_t bufsize=32000, Int_t splitlevel=99) {
+    TBranch* branch;
+    if (leaflist && *leaflist) {
+      branch = fTree->Branch (name, pval, leaflist, bufsize);
+      if (!branch) {
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' for entry %lld", name, leaflist, fIndex);
+        return branch;
+      }
+      if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' created with leaves '%s' for entry %lld", name, leaflist, fIndex);
+    } else {
+      branch = fTree->Branch (name, pval, bufsize, splitlevel);
+      if (!branch) {
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch for '%s'", name);
+        return branch;
+      }
+      if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' created and set for entry %lld", name, fIndex);
+    }
+    return branch;
+  }
+
+  template <typename T>
+  bool SetBranch (TBranch* branch, const char* name, T* pval) {
+    TClass* expectedClass = 0;
+    EDataType expectedType = kOther_t;
+    if (branch->GetExpectedType (expectedClass, expectedType)) {
+      if (fVerbose >= 0) Error (tname<T>("Set"), "GetExpectedType failed for branch '%s'", name);
+      return false;
+    }
+    Int_t stat=0;
+    if (expectedClass) {
+#ifndef TTreeIterator_NO_TEMPORARY
+      fSetPtr.push_back (pval);
+      T** ppval = (T**)&fSetPtr.back();
+#else
+      T** ppval = &pval;
+#endif
+      stat = fTree->SetBranchAddress (name, ppval);
+    } else {
+      stat = fTree->SetBranchAddress (name,  pval);
+    }
+    if (stat < 0) {
+      if (fVerbose >= 0) Error (tname<T>("Set"), "%s SetBranchAddress failed for branch '%s'", (expectedClass?"Object":"Type"), name);
+      return false;
+    }
+    if (fVerbose >= 1) Info (tname<T>("Set"), "%s branch '%s' set for entry %lld", (expectedClass?"Object":"Type"), name, fIndex);
+    return true;
+  }
+
 
   // Member variables
   Long64_t fIndex;
@@ -300,10 +341,10 @@ protected:
   ClassDefOverride(TTreeIterator,0)
 };
 
-template<> inline float         TTreeIterator::tdefault() { return std::numeric_limits<float      >::quiet_NaN(); }
-template<> inline double        TTreeIterator::tdefault() { return std::numeric_limits<double     >::quiet_NaN(); }
-template<> inline long double   TTreeIterator::tdefault() { return std::numeric_limits<long double>::quiet_NaN(); }
-template<> inline char          TTreeIterator::tdefault() { return '#'; }
-template<> inline int           TTreeIterator::tdefault() { return -1;  }
-template<> inline long int      TTreeIterator::tdefault() { return -1;  }
-template<> inline long long int TTreeIterator::tdefault() { return -1;  }
+template<> inline float         TTreeIterator::type_default() { return std::numeric_limits<float      >::quiet_NaN(); }
+template<> inline double        TTreeIterator::type_default() { return std::numeric_limits<double     >::quiet_NaN(); }
+template<> inline long double   TTreeIterator::type_default() { return std::numeric_limits<long double>::quiet_NaN(); }
+template<> inline char          TTreeIterator::type_default() { return '#'; }
+template<> inline int           TTreeIterator::type_default() { return -1;  }
+template<> inline long int      TTreeIterator::type_default() { return -1;  }
+template<> inline long long int TTreeIterator::type_default() { return -1;  }
