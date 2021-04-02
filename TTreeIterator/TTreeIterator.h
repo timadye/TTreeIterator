@@ -73,7 +73,9 @@ public:
     : TNamed(tree ? tree->GetName() : "", tree ? tree->GetTitle() : ""),
       fTree(tree),
       fIndex(tree ? tree->GetEntries() : 0),
-      fVerbose(verbose) {}
+      fVerbose(verbose) {
+//  fTree->SetBranchStatus("*",0);
+  }
   TTreeIterator (const char* keyname, TDirectory* dir, int verbose=0)
     : TNamed(keyname, ""),
       fTree(nullptr),
@@ -87,6 +89,7 @@ public:
     else {
       SetTitle(fTree->GetTitle());
       fIndex = fTree->GetEntries();
+//    fTree->SetBranchStatus("*",0);
     }
   }
 //~TTreeIterator() override {}   // default probably OK
@@ -103,10 +106,17 @@ public:
       if (fVerbose >= 0) Error ("GetEntry", "no tree available");
       return *this;
     }
-    if( fTree->GetEntry(fIndex) > 0) {
-      if (fVerbose >= 1) Info  ("GetEntry", "Read entry %lld", fIndex);
+    for (auto& ibranch : fBranches) {
+      ibranch.second.first->SetBit(kDoNotProcess);  // don't need GetEntry to read out variables
+    }
+    Int_t nbytes = fTree->GetEntry(fIndex);
+    for (auto& ibranch : fBranches) {
+      ibranch.second.first->ResetBit(kDoNotProcess);
+    }
+    if (nbytes >= 0) {
+      if (fVerbose >= 1) Info  ("GetEntry", "read %d bytes from entry %lld", nbytes, fIndex);
     } else {
-      if (fVerbose >= 0) Error ("GetEntry", "Problem reading entry %lld", fIndex);
+      if (fVerbose >= 0) Error ("GetEntry", "problem reading entry %lld", fIndex);
     }
     return *this;
   }
@@ -123,13 +133,14 @@ public:
   virtual Int_t Fill() {
     if (!fTree) return 0;
     fIndex++;
-    for (auto& [name,branch] : fBranches) {
-      branch.first->SetBit(kDoNotProcess);  // don't let Fill do anything with our branch
+    for (auto& ibranch : fBranches) {
+      ibranch.second.first->SetBit(kDoNotProcess);  // don't let Fill do anything with our branch
     }
     Int_t nbytes = fTree->Fill();           // fill any other branches and do autosave
-    for (auto& [name,branch] : fBranches) {
-      branch.first->ResetBit(kDoNotProcess);
+    for (auto& ibranch : fBranches) {
+      ibranch.second.first->ResetBit(kDoNotProcess);
     }
+    if (fVerbose >= 1) Info ("Fill", "Filled %d bytes for entry %lld", nbytes, fIndex);
     return nbytes;
   }
 
@@ -167,21 +178,14 @@ public:
     }
     T* pval = const_cast<T*>(&val);  // keep in scope until Filled
 
-    TBranch* branch = nullptr;
     bool isobj = false;
-    if (auto it = fBranches.find(name); it != fBranches.end()) {
-      branch = it->second.first;
-      isobj  = it->second.second;
-    } else {
-      branch = fTree->GetBranch(name);
-      if (branch)
-        isobj = SaveBranch (name, branch);
-    }
-
+    TBranch* branch = GetBranch (name, isobj);
     if (!branch) {
       if (fIndex <= 0) {
         branch = NewBranch<T> (name, pval, leaflist, bufsize, splitlevel);
-        FillBranch (branch, name);
+        FillBranch<T> (branch, name);
+        branch->ResetAddress();
+//      branch->SetBit(kDoNotProcess);
         return val;
       }
       T def = type_default<T>();  // keep in scope until Filled
@@ -189,7 +193,7 @@ public:
       branch = NewBranch<T> (name, pdef, leaflist, bufsize, splitlevel);
       if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex);
       for (Long64_t i = 0; i < fIndex; i++) {
-        FillBranch (branch, name, false);
+        FillBranch<T> (branch, name, 1);
       }
 
     } else {
@@ -201,23 +205,27 @@ public:
         T def = type_default<T>();      // keep in scope until Filled
         T* pdef = &def;                 // keep in scope until Filled
         void** ppdef = (void**) &pdef;  // keep in scope until Filled
-        SetBranch<T> (branch, name, ppdef, isobj);
+        SetBranch (branch, name, ppdef, isobj);
         if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex-n);
         for (Long64_t i = n; i < fIndex; i++) {
-          FillBranch (branch, name, false);
+          FillBranch<T> (branch, name, 1);
         }
       } else if (n == fIndex+1) {
         if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' skip filling entry %lld - already filled", name, fIndex);
+//      branch->SetBit(kDoNotProcess);
         return val;
       } else {   // if (n > fIndex+1)
         if (fVerbose >= 0) Error (tname<T>("Set"), "branch '%s' entry %lld is already %lld ahead of the rest of the tree", name, fIndex, n-(fIndex+1));
+//      branch->SetBit(kDoNotProcess);
         return val;
       }
     }
 
     void** ppval = (void**) &pval;   // keep in scope until Filled
-    SetBranch<T> (branch, name, ppval, isobj);
-    FillBranch (branch, name);
+    SetBranch (branch, name, ppval, isobj);
+    FillBranch<T> (branch, name);
+    branch->ResetAddress();
+//  branch->SetBit(kDoNotProcess);
     return val;
   }
 
@@ -227,34 +235,24 @@ public:
       if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
       return val;
     }
-    TBranch* branch = fTree->GetBranch(name);
+    bool isobj = false;
+    TBranch* branch = GetBranch (name, isobj);
     if (!branch) {
       if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
       return val;
     }
-    TClass* expectedClass = 0;
-    EDataType expectedType = kOther_t;
-    if (branch->GetExpectedType (expectedClass, expectedType)) {
-      if (fVerbose >= 0) Error (tname<T>("Get"), "GetExpectedType failed for branch '%s'", name);
-      return val;
-    }
-    Int_t stat=0;
-    T* pval = &val;  // keep in memory until we call GetEntry()
-    if (expectedClass) {
-      stat = fTree->SetBranchAddress (name, &pval);
-    } else {
-      stat = fTree->SetBranchAddress (name, &val);
-    }
-    if (stat < 0) {
-      if (fVerbose >= 0) Error (tname<T>("Get"), "%s SetBranchAddress failed for branch '%s'", (expectedClass?"Object":"Type"), name);
-      return val;
-    }
-    Int_t nread = branch->GetEntry(fIndex);
+    T* pval = &val;                  // keep in scope until GetEntry()
+    void** ppval = (void**) &pval;   // keep in scope until GetEntry()
+    SetBranch (branch, name, ppval, isobj);
+    Int_t nread = branch->GetEntry (fIndex);
     branch->ResetAddress();
-    if (nread <= 0) {
+//  branch->SetBit(kDoNotProcess);
+    if (nread < 0) {
       if (fVerbose >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, fIndex);
+    } else if (nread == 0) {
+      if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
     } else {
-      if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' read from entry %lld", name, fIndex);
+      if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
     }
     return val;
   }
@@ -280,6 +278,22 @@ public:
 protected:
   template<typename T> static T type_default() { return T(); }
 
+  TBranch* GetBranch (const char* name, bool& isobj) const {
+    TBranch* branch = nullptr;
+    isobj = false;
+    auto it = fBranches.find(name);
+    if (it != fBranches.end()) {
+      branch = it->second.first;
+      isobj  = it->second.second;
+    } else {
+      branch = fTree->GetBranch(name);
+      if (!branch) return branch;
+      isobj = SaveBranch (name, branch);
+    }
+//  branch->ResetBit(kDoNotProcess);
+    return branch;
+  }
+
   template <typename T>
   TBranch* NewBranch (const char* name, T* pval, const char* leaflist=0, Int_t bufsize=32000, Int_t splitlevel=99) {
     TBranch* branch;
@@ -289,20 +303,20 @@ protected:
         if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s'", name, leaflist);
         return branch;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s' and fill entry %lld", name, leaflist, fIndex);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s'", name, leaflist);
     } else {
       branch = fTree->Branch (name, pval, bufsize, splitlevel);
       if (!branch) {
         if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s'", name);
         return branch;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' and fill entry %lld", name, fIndex);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s'", name);
     }
     SaveBranch (name, branch);
     return branch;
   }
 
-  bool SaveBranch (const char* name, TBranch* branch) {
+  bool SaveBranch (const char* name, TBranch* branch) const {
     TClass* expectedClass = 0;
     EDataType expectedType = kOther_t;
     if (branch->GetExpectedType (expectedClass, expectedType)) {
@@ -310,29 +324,26 @@ protected:
       return false;
     }
     fBranches[name] = std::make_pair(branch,bool(expectedClass));
-    return expectedClass;
+    return bool(expectedClass);
   }
 
-  template <typename T>
-  bool SetBranch (TBranch* branch, const char* name, void** ppval, bool isobj) {
+  bool SetBranch (TBranch* branch, const char* name, void** ppval, bool isobj) const {
     branch->SetAddress (isobj ? ppval : *ppval);
-    if (fVerbose >= 1) {
-      Info (tname<T>("Set"), "set branch '%s' %s address and fill entry %lld", name, (isobj?"object":"variable"), fIndex);
+    if (fVerbose >= 2) {
+      Info ("Set", "set branch '%s' %s address", name, (isobj?"object":"variable"));
     }
     return true;
   }
 
-  Int_t FillBranch (TBranch* branch, const char* name, bool reset=true) {
+  template <typename T>
+  Int_t FillBranch (TBranch* branch, const char* name, int quiet=0) {
     Int_t nbytes = branch->Fill();
     if (nbytes > 0) {
-      if (fVerbose >= 2) Info ("Set", "filled branch '%s' with %d bytes", name, nbytes);
+      if (fVerbose-quiet >= 1) Info (tname<T>("Set"), "filled branch '%s' with %d bytes for entry %lld", name, nbytes, fIndex);
     } else if (nbytes == 0) {
-      if (fVerbose >= 0) Error ("Set", "no data filled in branch '%s'", name);
+      if (fVerbose >= 0) Error (tname<T>("Set"), "no data filled in branch '%s' for entry %lld", name, fIndex);
     } else {
-      if (fVerbose >= 0) Error ("Set", "error filling branch '%s'", name);
-    }
-    if (reset) {
-      branch->SetAddress (nullptr);
+      if (fVerbose >= 0) Error (tname<T>("Set"), "error filling branch '%s' for entry %lld", name, fIndex);
     }
     return nbytes;
   }
@@ -340,7 +351,7 @@ protected:
 
   // Member variables
   Long64_t fIndex;
-  std::map<std::string,std::pair<TBranch*,bool> > fBranches;
+  mutable std::map<std::string,std::pair<TBranch*,bool> > fBranches;
   TTree* fTree;
   int fVerbose;
 
