@@ -77,7 +77,6 @@ public:
   TTreeIterator (const char* name="", int verbose=0)
     : TNamed(name, ""),
       fTree(new TTree(name,"")),
-      fIndex(0),
       fVerbose(verbose) {}
   TTreeIterator (TTree* tree, int verbose=0)
     : TNamed(tree ? tree->GetName() : "", tree ? tree->GetTitle() : ""),
@@ -88,8 +87,6 @@ public:
   }
   TTreeIterator (const char* keyname, TDirectory* dir, int verbose=0)
     : TNamed(keyname, ""),
-      fTree(nullptr),
-      fIndex(0),
       fVerbose(verbose)
   {
     if (!dir) dir = gDirectory;
@@ -110,16 +107,22 @@ public:
   TTree* GetTree() const { return fTree; }
 
   // Forwards to TTree
-  TTreeIterator& GetEntry(Long64_t entry) {
+  TTreeIterator& GetEntry (Long64_t entry) {
     return setIndex(entry).GetEntry();
   }
-  void Print(Option_t* opt = "") const override {
+  void Print (Option_t* opt="") const override {
     if (fTree) fTree->Print(opt);
     else              Print(opt);
   }
-  void Browse(TBrowser* b) override {
+  void Browse (TBrowser* b) override {
     if (fTree) fTree->Browse(b);
+    else              Browse(b);
   }
+  void  SetBufsize    (Int_t bufsize)    { fBufsize    = bufsize;    }
+  void  SetSplitlevel (Int_t splitlevel) { fSplitlevel = splitlevel; }
+  Int_t GetBufsize()    const            { return       fBufsize;    }
+  Int_t GetSplitlevel() const            { return       fSplitlevel; }
+
 
   std::string ActiveBranchNames() {
     std::string allbranches;
@@ -213,6 +216,25 @@ public:
     return iterator (*this, last, last);
   }
 
+  // Create empty branch
+  template <typename T>
+  TBranch* Branch (const char* name) {
+    return Branch<T> (name, GetLeaflist<T>(), fBufsize, fSplitlevel);
+  }
+
+  template <typename T>
+  TBranch* Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
+    if (!fTree) {
+      if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
+      return nullptr;
+    }
+    T def = type_default<T>();
+    BranchInfo* ibranch = NewBranch<T> (name, &def, leaflist, bufsize, splitlevel);
+    if (!ibranch) return nullptr;
+    TBranch* branch = ibranch->branch;
+    branch->ResetAddress();
+    return branch;
+  }
 
   // Access to the current entry
   Getter Get        (const char* name) const { return Getter(*this,name); }
@@ -221,7 +243,12 @@ public:
 
 
   template <typename T>
-  const T& Set(const char* name, const T& val, const char* leaflist=0, Int_t bufsize=32000, Int_t splitlevel=99)
+  const T& Set(const char* name, const T& val) {
+    return Set<T> (name, val, GetLeaflist<T>(), fBufsize, fSplitlevel);
+  }
+
+  template <typename T>
+  const T& Set(const char* name, const T& val, const char* leaflist, Int_t bufsize, Int_t splitlevel)
   {
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
@@ -234,6 +261,7 @@ public:
     if (!ibranch) {
       if (fIndex <= 0) {
         ibranch = NewBranch<T> (name, pval, leaflist, bufsize, splitlevel);
+        if (!ibranch) return val;
         branch = ibranch->branch;
         FillBranch<T> (branch, name);
         branch->ResetAddress();
@@ -242,6 +270,7 @@ public:
       T def = type_default<T>();  // keep in scope until Filled
       T* pdef = &def;             // keep in scope until Filled
       ibranch = NewBranch<T> (name, pdef, leaflist, bufsize, splitlevel);
+      if (!ibranch) return val;
       branch = ibranch->branch;
       if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex);
       for (Long64_t i = 0; i < fIndex; i++) {
@@ -359,8 +388,14 @@ public:
     return ret.c_str();
   }
 
+  template<typename T> static T           type_default() { return T();                   }
+  template<typename T> static const char* GetLeaflist()  { return GetLeaflistImpl<T>(0); }
+
+private:
+  template<typename T> static decltype(T::leaflist) GetLeaflistImpl(int)  { return T::leaflist; }
+  template<typename T> static const char*           GetLeaflistImpl(long) { return nullptr;     }
+
 protected:
-  template<typename T> static T type_default() { return T(); }
 
   template <typename T>
   BranchInfo* GetBranch (const char* name) const {
@@ -471,10 +506,12 @@ protected:
 
 
   // Member variables
-  Long64_t fIndex;
+  Long64_t fIndex=0;
   mutable std::map<std::string,BranchInfo> fBranches;
-  TTree* fTree;
-  int fVerbose;
+  TTree* fTree=nullptr;
+  Int_t fBufsize=32000;
+  Int_t fSplitlevel=99;
+  int fVerbose=0;
 
   ClassDefOverride(TTreeIterator,0)
 };
