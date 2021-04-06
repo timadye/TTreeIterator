@@ -311,8 +311,22 @@ public:
     return val;
   }
 
+  // wrapper round GetImpl to preserve return-value optimisation of val.
   template <typename T>
-  T Get(const char* name, T val=type_default<T>()) const {
+  T Get(const char* name) const {
+    T val = type_default<T>();
+    GetImpl<T>(name,val);
+    return val;
+  }
+
+  template <typename T>
+  T Get(const char* name, T val) const {
+    GetImpl<T>(name,val);
+    return val;
+  }
+
+  template <typename T>
+  T& GetImpl(const char* name, T& val) const {
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
       return val;
