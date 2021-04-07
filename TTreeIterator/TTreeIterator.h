@@ -23,20 +23,45 @@ public:
                             const TTreeIterator& >     // reference
   {
   public:
-    iterator (TTreeIterator& entry, Long64_t first, Long64_t last) : fEntry(entry), fIndex(first), fEnd(last) {}
+    iterator (TTreeIterator& entry, Long64_t first, Long64_t last, bool quiet=false) : fEntry(entry), fIndex(first), fEnd(last) {
+      if (!quiet && fEntry.fVerbose >= 1 && fEntry.fTree && fEntry.fTree->GetDirectory() && fEnd-fIndex>0)
+        ::Info ("TTreeIterator", "get %lld entries from tree '%s' in file %s", fEnd-fIndex, fEntry.fTree->GetName(), fEntry.fTree->GetDirectory()->GetName());
+    }
 //  iterator (const iterator& in) : fEntry(in.fEntry), fIndex(in.fIndex), fEnd(in.fEnd) {}  // default probably OK
     iterator& operator++() { ++fIndex; return *this; }
     iterator operator++(int) { iterator it = *this; ++fIndex; return it; }
     bool operator!= (const iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const iterator& other) const { return fIndex == other.fIndex; }
     const TTreeIterator& operator*() const { return fIndex < fEnd ? fEntry.setIndex(fIndex).GetEntry() : fEntry; }
-  private:
+    iterator begin () { return iterator (fEntry, fIndex, fEnd); }
+    iterator end ()   { return iterator (fEntry, fEnd,   fEnd); }
+    Long64_t first()  { return fIndex; }
+    Long64_t last()   { return fEnd;   }
+  protected:
     Long64_t fIndex;
     const Long64_t fEnd;
     TTreeIterator& fEntry;   // TTreeIterator also handles the entry
   };
   typedef iterator iterator_t;
 
+  class fill_iterator : public iterator {
+  public:
+    fill_iterator (TTreeIterator& entry, Long64_t first, Long64_t last, bool quiet=false) : iterator(entry,first,last,true) {
+      if (!quiet && fEntry.fVerbose >= 1 && fEntry.fTree && fEntry.fTree->GetDirectory()) {
+        if (fEnd < fIndex) {
+          ::Info ("TTreeIterator", "fill entries into tree '%s' in file %s", fEntry.fTree->GetName(), fEntry.fTree->GetDirectory()->GetName());
+        } else if (fEnd > fIndex) {
+          ::Info ("TTreeIterator", "fill %lld entries into tree '%s' in file %s", fEnd-fIndex, fEntry.fTree->GetName(), fEntry.fTree->GetDirectory()->GetName());
+        }
+      }
+    }
+    ~fill_iterator() { fEntry.Write(); }
+    fill_iterator& operator++() { fEntry.Fill(); fIndex++; return *this; }
+    fill_iterator operator++(int) { fill_iterator it = *this; ++*this; return it; }
+    TTreeIterator& operator*() const { return fEntry; }
+    fill_iterator begin() { return fill_iterator (fEntry, fIndex, fEnd); }
+    fill_iterator end()   { return fill_iterator (fEntry, fEnd,   fEnd); }
+  };
 
   // Wrapper class to provide return-type deduction
   class Getter {
@@ -166,7 +191,7 @@ public:
 
     Int_t nbytes = fTree->GetEntry(fIndex);
     if (nbytes >= 0) {
-      if (fVerbose >= 1) Info  ("GetEntry", "read %d bytes from entry %lld", nbytes, fIndex);
+      if (fVerbose >= (nbytes?1:2)) Info  ("GetEntry", "read %d bytes from entry %lld", nbytes, fIndex);
     } else {
       if (fVerbose >= 0) Error ("GetEntry", "problem reading entry %lld", fIndex);
     }
@@ -189,12 +214,21 @@ public:
     }
 
     Int_t nbytes = fTree->Fill();           // fill any other branches and do autosave
-    if (fVerbose >= 1) Info ("Fill", "Filled %d bytes for entry %lld", nbytes, fIndex);
+    if (fVerbose >= (nbytes?1:2)) Info ("Fill", "Filled %d bytes for entry %lld", nbytes, fIndex);
+    if (nbytes > 0) fWriting = true;
 
     for (auto& ibranch : fBranches) {
       ibranch.second.DisableReset(fVerbose);
     }
     fIndex++;
+    return nbytes;
+  }
+
+  Int_t Write (const char *name=0, Int_t option=0, Int_t bufsize=0) override {
+    if (!(fWriting && fTree && fTree->GetDirectory())) return 0;
+    Int_t nbytes = fTree->Write(name,option,bufsize);
+    if (fVerbose >= 1) Info ("Write", "wrote %d bytes to file %s", nbytes, fTree->GetDirectory()->GetName());
+    fWriting = false;
     return nbytes;
   }
 
@@ -214,6 +248,12 @@ public:
   iterator end()   {
     Long64_t last = fTree ? fTree->GetEntries() : 0;
     return iterator (*this, last, last);
+  }
+
+  fill_iterator FillEntries (Long64_t nfill=-1) {
+    if (!fTree) return fill_iterator (*this,0,0);
+    Long64_t np = fTree->GetEntries();
+    return fill_iterator (*this, np, nfill>=0 ? np+nfill : -1, true);
   }
 
   // Create empty branch
@@ -287,7 +327,7 @@ public:
         T def = type_default<T>();      // keep in scope until Filled
         T* pdef = &def;                 // keep in scope until Filled
         T** ppdef = &pdef;              // keep in scope until Filled
-        SetBranch (ibranch, name, ppdef);
+        SetBranch (ibranch, name, ppdef, "Set");
         if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex-n);
         for (Long64_t i = n; i < fIndex; i++) {
           FillBranch<T> (branch, name, 1);
@@ -304,7 +344,7 @@ public:
     }
 
     T** ppval = &pval;   // keep in scope until Filled
-    SetBranch (ibranch, name, ppval);
+    SetBranch (ibranch, name, ppval, "Set");
     FillBranch<T> (branch, name);
     branch->ResetAddress();
     ibranch->EnableReset(fVerbose);
@@ -445,6 +485,7 @@ protected:
       }
       if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s'", name);
     }
+    fWriting = true;
     return SaveBranch<T> (name, branch, true);
   }
 
@@ -466,7 +507,7 @@ protected:
   }
 
   template <typename T>
-  bool SetBranch (BranchInfo* ibranch, const char* name, T** ppval) const {
+  bool SetBranch (BranchInfo* ibranch, const char* name, T** ppval, const char* call="Get") const {
     bool isobj = ibranch->isobj;
     if (ibranch->type_hash && ibranch->type_hash == typeid(T).hash_code()) {
       // type check already done for T
@@ -477,7 +518,7 @@ protected:
         branch->SetAddress (*ppval);
       }
       if (fVerbose >= 2) {
-        Info (tname<T>("SetBranch"), "set branch '%s' %s address", name, (isobj?"object":"variable"));
+        Info (tname<T>(call), "set branch '%s' %s address", name, (isobj?"object":"variable"));
       }
     } else {
       Int_t stat=0;
@@ -488,17 +529,17 @@ protected:
         stat = fTree->SetBranchAddress (name, *ppval, &branch);
       }
       if (stat < 0) {
-        if (fVerbose >= 0) Error (tname<T>("SetBranch"), "failed to set branch '%s' %s address", name, (isobj?"object":"variable"));
+        if (fVerbose >= 0) Error (tname<T>(call), "failed to set branch '%s' %s address", name, (isobj?"object":"variable"));
         return false;
       }
       if (branch == ibranch->branch) {
         ibranch->type_hash = typeid(T).hash_code();
         if (fVerbose >= 1) {
-          Info (tname<T>("SetBranch"), "set branch '%s' %s address (saved)", name, (isobj?"object":"variable"));
+          Info (tname<T>(call), "set branch '%s' %s address (saved)", name, (isobj?"object":"variable"));
         }
       } else {
         if (fVerbose >= 1) {
-          Info (tname<T>("SetBranch"), "set branch '%s' %s address (not saved)", name, (isobj?"object":"variable"));
+          Info (tname<T>(call), "set branch '%s' %s address (not saved)", name, (isobj?"object":"variable"));
         }
       }
     }
@@ -509,6 +550,7 @@ protected:
   Int_t FillBranch (TBranch* branch, const char* name, int quiet=0) {
     Int_t nbytes = branch->Fill();
     if (nbytes > 0) {
+      fWriting = true;
       if (fVerbose-quiet >= 1) Info (tname<T>("Set"), "filled branch '%s' with %d bytes for entry %lld", name, nbytes, fIndex);
     } else if (nbytes == 0) {
       if (fVerbose >= 0) Error (tname<T>("Set"), "no data filled in branch '%s' for entry %lld", name, fIndex);
@@ -526,6 +568,7 @@ protected:
   Int_t fBufsize=32000;
   Int_t fSplitlevel=99;
   int fVerbose=0;
+  bool fWriting=false;
 
   ClassDefOverride(TTreeIterator,0)
 };
