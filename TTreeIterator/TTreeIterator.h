@@ -319,43 +319,12 @@ public:
     return val;
   }
 
+  // Get() allowing the default value (returned if there is an error) to be specified.
   template <typename T>
   T Get(const char* name, T val) const {
     GetImpl<T>(name,val);
     return val;
   }
-
-  template <typename T>
-  T& GetImpl(const char* name, T& val) const {
-    if (!fTree) {
-      if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
-      return val;
-    }
-    BranchInfo* ibranch = GetBranch<T> (name);
-    if (!ibranch) {
-      if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
-      return val;
-    }
-    TBranch* branch = ibranch->branch;
-    T* pval = &val;                  // keep in scope until GetEntry()
-    T** ppval = &pval;   // keep in scope until GetEntry()
-    if (!SetBranch (ibranch, name, ppval)) {
-      ibranch->EnableReset(fVerbose);
-      return val;
-    }
-    Int_t nread = branch->GetEntry (fIndex);
-    branch->ResetAddress();
-    if (nread < 0) {
-      if (fVerbose >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, fIndex);
-    } else if (nread == 0) {
-      if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
-    } else {
-      if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
-    }
-    ibranch->EnableReset(fVerbose);
-    return val;
-  }
-
 
   // Set the status for a branch and all its sub-branches.
   void SetBranchStatusAll (bool status=true) {
@@ -410,6 +379,37 @@ private:
   template<typename T> static const char*           GetLeaflistImpl(long) { return nullptr;     }
 
 protected:
+
+  template <typename T>
+  T& GetImpl(const char* name, T& val) const {
+    if (!fTree) {
+      if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
+      return val;
+    }
+    BranchInfo* ibranch = GetBranch<T> (name);
+    if (!ibranch) {
+      if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
+      return val;
+    }
+    TBranch* branch = ibranch->branch;
+    T* pval = &val;                  // keep in scope until GetEntry()
+    T** ppval = &pval;   // keep in scope until GetEntry()
+    if (!SetBranch (ibranch, name, ppval)) {
+      ibranch->EnableReset(fVerbose);
+      return val;
+    }
+    Int_t nread = branch->GetEntry (fIndex);
+    branch->ResetAddress();
+    if (nread < 0) {
+      if (fVerbose >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, fIndex);
+    } else if (nread == 0) {
+      if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
+    } else {
+      if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
+    }
+    ibranch->EnableReset(fVerbose);
+    return val;
+  }
 
   template <typename T>
   BranchInfo* GetBranch (const char* name) const {
