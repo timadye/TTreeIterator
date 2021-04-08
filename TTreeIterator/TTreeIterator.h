@@ -143,6 +143,7 @@ public:
     if (fTree) fTree->Browse(b);
     else              Browse(b);
   }
+  Long64_t GetEntries () const { return fTree ? fTree->GetEntries() : 0; }
   void  SetBufsize    (Int_t bufsize)    { fBufsize    = bufsize;    }
   void  SetSplitlevel (Int_t splitlevel) { fSplitlevel = splitlevel; }
   Int_t GetBufsize()    const            { return       fBufsize;    }
