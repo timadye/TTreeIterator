@@ -68,7 +68,8 @@ public:
   class Getter {
   public:
     Getter(const TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
-    template <typename T>          operator T() const       { return fEntry.Get<T>(fName);      }
+    template <typename T> operator const T&() const { return fEntry.Get<T>(fName); }
+    template <typename T> operator T&() const { return fEntry.Get<T>(fName); }
 //  template <typename T> T operator+ (const T& v) const { return T(*this) +  v; }
 //  template <typename T> T operator+=(const T& v)       { return T(*this) += v; }
   private:
@@ -80,7 +81,8 @@ public:
   class Setter {
   public:
     Setter(      TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
-    template <typename T>          operator T() const       { return fEntry.Get<T>(fName);      }
+    template <typename T> operator const T&() const { return fEntry.Get<T>(fName); }
+    template <typename T> operator T&() const { return fEntry.Get<T>(fName); }
     template <typename T> const T& operator= (const T& val) { return fEntry.Set<T>(fName, val); }
   private:
     TTreeIterator& fEntry;
@@ -100,6 +102,17 @@ public:
     void SetBranchStatus (bool status=true, int verbose=0) { TTreeIterator::SetBranchStatus (branch, status, verbose); }
   };
 
+#ifdef SHOW_BranchInfo   // and rename BranchInfo above to BranchInfo2
+  struct BranchInfo : public BranchInfo2 {
+    BranchInfo() { printf("BranchInfo()@%p\n",this); }
+    BranchInfo(TBranch* b,size_t t,const std::any& v) : BranchInfo2{b,t,v} { printf("BranchInfo(init)@%p\n",this); }
+    BranchInfo(const BranchInfo& o) : BranchInfo2{o} { printf("BranchInfo(BranchInfo())@%p\n",this); }
+    BranchInfo(BranchInfo&& o) : BranchInfo2{o} { printf("BranchInfo(BranchInfo&&())@%p\n",this); }
+    ~BranchInfo() { printf("~BranchInfo()@%p\n",this); }
+    BranchInfo& operator=(const BranchInfo& o) { BranchInfo2::operator=(o); printf("BranchInfo = BranchInfo()@%p\n",this); return *this; }
+    BranchInfo& operator=(      BranchInfo&&o) { BranchInfo2::operator=(o); printf("BranchInfo = BranchInfo&&()@%p\n",this); return *this; }
+  };
+#endif
 
   // Constructors and destructors
   TTreeIterator (const char* name="", int verbose=0)
@@ -185,16 +198,18 @@ public:
       if (fVerbose >= 0) Error ("GetEntry", "no tree available");
       return *this;
     }
-    if (fVerbose >= 1) {
-      std::string allbranches = ActiveBranchNames();
-      if (allbranches.size()) Info ("GetEntry", "entry %lld read active branches: %s", fIndex, allbranches.c_str());
-    }
 
     Int_t nbytes = fTree->GetEntry(fIndex);
     if (nbytes >= 0) {
-      if (fVerbose >= (nbytes?1:2)) Info  ("GetEntry", "read %d bytes from entry %lld", nbytes, fIndex);
+      if (fVerbose >= 1) {
+        std::string allbranches = ActiveBranchNames();
+        Info  ("GetEntry", "read %d bytes from entry %lld for branches: %s", nbytes, fIndex, allbranches.c_str());
+      }
     } else {
-      if (fVerbose >= 0) Error ("GetEntry", "problem reading entry %lld", fIndex);
+      if (fVerbose >= 0) {
+        std::string allbranches = ActiveBranchNames();
+        Error ("GetEntry", "problem reading entry %lld for branches: %s", fIndex, allbranches.c_str());
+      }
     }
     return *this;
   }
@@ -202,13 +217,21 @@ public:
 
   virtual Int_t Fill() {
     if (!fTree) return 0;
-    if (fVerbose >= 1) {
-      std::string allbranches = ActiveBranchNames();
-      if (allbranches.size()) Info ("Fill", "entry %lld fill active branches: %s", fIndex, allbranches.c_str());
+
+    Int_t nbytes = fTree->Fill();
+
+    if (nbytes >= 0) {
+      if (fVerbose >= 1) {
+        std::string allbranches = ActiveBranchNames();
+        Info  ("Fill", "Filled %d bytes for entry %lld, branches: %s", nbytes, fIndex, allbranches.c_str());
+      }
+    } else {
+      if (fVerbose >= 0) {
+        std::string allbranches = ActiveBranchNames();
+        Error ("Fill", "problem writing entry %lld for branches: %s", fIndex, allbranches.c_str());
+      }
     }
 
-    Int_t nbytes = fTree->Fill();           // fill any other branches and do autosave
-    if (fVerbose >= (nbytes?1:2)) Info ("Fill", "Filled %d bytes for entry %lld", nbytes, fIndex);
     if (nbytes > 0) fWriting = true;
 
     fIndex++;
@@ -297,25 +320,30 @@ public:
           FillBranch<T> (branch, name, 1);
         }
       }
-
     }
-
-    ibranch->value = val;
+    ibranch->value.emplace<T>(val);
     return val;
   }
 
-  // wrapper round GetImpl to preserve return-value optimisation of val.
+  // Get value, returning a reference
   template <typename T>
-  T Get(const char* name) const {
+  T& Get(const char* name) const {
+    static T def {type_default<T>()};   // static default value for each type to allow us to return by reference
     BranchInfo* ibranch = GetImpl<T>(name);
-    return ibranch ? std::any_cast<T>(ibranch->value) : type_default<T>();
+    return ibranch ? std::any_cast<T&>(ibranch->value) : def;
   }
 
   // Get() allowing the default value (returned if there is an error) to be specified.
   template <typename T>
-  T Get(const char* name, T val) const {
+  T& Get(const char* name, T& val) const {
     BranchInfo* ibranch = GetImpl<T>(name);
-    return ibranch ? std::any_cast<T>(ibranch->value) : val;
+    return ibranch ? std::any_cast<T&>(ibranch->value) : val;
+  }
+
+  template <typename T>
+  const T& Get(const char* name, const T& val) const {
+    BranchInfo* ibranch = GetImpl<T>(name);
+    return ibranch ? std::any_cast<T&>(ibranch->value) : val;
   }
 
   // Set the status for a branch and all its sub-branches.
@@ -408,7 +436,12 @@ protected:
     auto it = fBranches.find(name);
     if (it != fBranches.end()) {
       BranchInfo* ibranch = &it->second;
-      if (ibranch->type_hash && ibranch->type_hash == typeid(T).hash_code()) return ibranch;
+      if (ibranch->type_hash && ibranch->type_hash == typeid(T).hash_code()) {
+        if (fVerbose >= 2) Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, ibranch->value.type().name(), &ibranch->value);
+        return ibranch;
+      } else {
+        if (fVerbose >= 1) Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p, but doesn't match requested type '%s'", name, ibranch->value.type().name(), &ibranch->value, typeid(T).name());
+      }
     }
     return nullptr;
   }
@@ -427,14 +460,14 @@ protected:
         if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s'", name, leaflist);
         return nullptr;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s'", name, leaflist);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s' of type '%s' @%p", name, leaflist, ibranch->value.type().name(), &ibranch->value);
     } else {
       branch = fTree->Branch (name, std::any_cast<T>(&ibranch->value), bufsize, splitlevel);
       if (!branch) {
         if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s'", name);
         return nullptr;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s'", name);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' of type '%s' @%p", name, ibranch->value.type().name(), &ibranch->value);
     }
     fWriting = true;
     return RegisterBranch<T> (ibranch, branch);

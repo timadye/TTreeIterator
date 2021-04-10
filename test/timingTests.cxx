@@ -19,7 +19,7 @@
 #define DO_ADDR
 #define DO_FILL
 #define DO_GET
-#define FULL_CHECKS
+//#define FULL_CHECKS
 
 const Long64_t nfill1 = 500000;
 const Long64_t nfill2 = 100000;
@@ -112,7 +112,7 @@ TEST(timingTests1, GetIter) {
     for (auto& b : bnames) {
       double x = e[b.c_str()];
 #ifdef FULL_CHECKS
-      EXPECT_EQ (x, v++);
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",titer.index(),b.c_str());
 #endif
     }
   }
@@ -160,7 +160,7 @@ TEST(timingTests1, GetAddr) {
   for (Long64_t i=0; i<n; i++) {
     tree->GetEntry(i);
 #ifdef FULL_CHECKS
-    for (auto& x : vals) EXPECT_EQ (x, v++);
+    for (auto& x : vals) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vals.data());
 #endif
   }
   tree->ResetBranchAddresses();
@@ -210,9 +210,9 @@ TEST(timingTests2, GetIter) {
 
   double v = vinit;
   for (auto& e : titer) {
-    MyStruct M = e["M"];
+    const MyStruct& M = e["M"];
 #ifdef FULL_CHECKS
-    for (auto& x : M.x) EXPECT_EQ (x, v++);
+    for (auto& x : M.x) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",titer.index(),&x-&M.x[0]);
 #endif
   }
 }
@@ -259,7 +259,7 @@ TEST(timingTests2, GetAddr) {
   for (Long64_t i=0; i<n; i++) {
     tree->GetEntry(i);
 #ifdef FULL_CHECKS
-    for (auto& x : M.x) EXPECT_EQ (x, v++);
+    for (auto& x : M.x) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-&M.x[0]);
 #endif
   }
   tree->ResetBranchAddresses();
@@ -299,10 +299,10 @@ TEST(timingTests3, GetIter) {
 
   double v = vinit;
   for (auto& e : titer) {
-    std::vector<double> vx = e["vx"];
+    const std::vector<double>& vx = e["vx"];
     EXPECT_EQ (vx.size(), nx3);
 #ifdef FULL_CHECKS
-    for (auto& x : vx) EXPECT_EQ (x, v++);
+    for (auto& x : vx) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",titer.index(),&x-vx.data());
 #endif
   }
 }
@@ -351,7 +351,7 @@ TEST(timingTests3, GetAddr) {
     tree->GetEntry(i);
     EXPECT_EQ (vx->size(), nx3);
 #ifdef FULL_CHECKS
-    for (auto& x : *vx) EXPECT_EQ (x, v++);
+    for (auto& x : *vx) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vx->data());
 #endif
   }
   tree->ResetBranchAddresses();
