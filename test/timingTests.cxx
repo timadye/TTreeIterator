@@ -28,6 +28,7 @@ constexpr size_t nx1 = 20;
 constexpr size_t nx2 = 100;
 constexpr size_t nx3 = 100;
 const double vinit = 42.3;  // fill each element with a different value starting from here
+const int verbose = 0;
 
 // ==========================================================================================
 // Global definitions
@@ -83,7 +84,7 @@ TEST(timingTests1, FillIter) {
   bnames.reserve(nx1);
   for (int i=0; i<nx1; i++) bnames.push_back (Form("x%03d",i));
 
-  TTreeIterator titer ("test");
+  TTreeIterator titer ("test", verbose);
   double v = vinit;
   for (auto& e : titer.FillEntries(nfill1)) {
     for (auto& b : bnames) e[b.c_str()] = v++;
@@ -96,7 +97,7 @@ TEST(timingTests1, GetIter) {
   TFile f ("test_timing1.root");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", &f);
+  TTreeIterator titer ("test", &f, verbose);
   ASSERT_TRUE(titer.GetTree()) << "no tree";
   EXPECT_EQ(titer.GetEntries(), nfill1);
   Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type1);
@@ -185,7 +186,7 @@ TEST(timingTests2, FillIter) {
   TFile f ("test_timing2.root", "recreate");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test");
+  TTreeIterator titer ("test", verbose);
   double v = vinit;
   for (auto& e : titer.FillEntries(nfill2)) {
     MyStruct M;
@@ -201,7 +202,7 @@ TEST(timingTests2, GetIter) {
   TFile f ("test_timing2.root");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", &f);
+  TTreeIterator titer ("test", &f, verbose);
   ASSERT_TRUE(titer.GetTree()) << "no tree";
   EXPECT_EQ(titer.GetEntries(), nfill2);
   Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type2);
@@ -274,7 +275,7 @@ TEST(timingTests3, FillIter) {
   TFile f ("test_timing3.root", "recreate");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test");
+  TTreeIterator titer ("test", verbose);
   double v = vinit;
   for (auto& e : titer.FillEntries(nfill3)) {
     std::vector<double> vx;
@@ -290,7 +291,7 @@ TEST(timingTests3, GetIter) {
   TFile f ("test_timing3.root");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", &f);
+  TTreeIterator titer ("test", &f, verbose);
   ASSERT_TRUE(titer.GetTree()) << "no tree";
   EXPECT_EQ(titer.GetEntries(), nfill3);
   Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type3);
