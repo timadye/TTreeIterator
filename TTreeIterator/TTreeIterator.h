@@ -6,6 +6,7 @@
 #include <string>
 #include <iterator>
 #include <limits>
+#include <utility>
 #include <any>
 
 #include "TDirectory.h"
@@ -80,26 +81,26 @@ public:
 
   class Setter {
   public:
-    Setter(      TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
+    Setter(TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
     template <typename T> operator const T&() const { return fEntry.Get<T>(fName); }
     template <typename T> operator T&() const { return fEntry.Get<T>(fName); }
-    template <typename T> const T& operator= (const T& val) { return fEntry.Set<T>(fName, val); }
+    template <typename T> const T& operator= (T&& val) { return fEntry.Set<T>(fName, std::forward<T>(val)); }
   private:
     TTreeIterator& fEntry;
     const char* fName;
   };
 
   struct BranchInfo {
-    TBranch* branch;
     size_t type_hash;
     std::any value;
     void* pvalue=nullptr;
+    TBranch* branch=nullptr;
     bool disabled=false;
     void  Enable     (int verbose=0) { if ( (disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
     void  EnableReset(int verbose=0) { if (  disabled)                                   SetBranchStatus (false, verbose); }
     void Disable     (int verbose=0) { if (!(disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus (false, verbose); }
     void DisableReset(int verbose=0) { if (! disabled)                                   SetBranchStatus ( true, verbose); }
-    void SetBranchStatus (bool status=true, int verbose=0) { TTreeIterator::SetBranchStatus (branch, status, verbose); }
+    void SetBranchStatus (bool status=true, int verbose=0) { TTreeIterator::SetBranchStatus (branch, status, true, verbose); }
   };
 
 #ifdef SHOW_BranchInfo   // and rename BranchInfo above to BranchInfo2
@@ -166,30 +167,21 @@ public:
   Int_t GetSplitlevel() const            { return       fSplitlevel; }
 
 
-  std::string ActiveBranchNames() {
-    std::string allbranches;
-    ActiveBranchNames (fTree->GetListOfBranches(), allbranches);
+  std::string BranchNamesString (bool include_children=true, bool include_inactive=false) {
+    std::string str;
+    auto allbranches = BranchNames (include_children, include_inactive);
+    for (auto& name : allbranches) {
+      if (!str.empty()) str += ", ";
+      str += name;
+    }
+    return str;
+  }
+
+  std::vector<std::string> BranchNames (bool include_children=false, bool include_inactive=false) {
+    std::vector<std::string> allbranches;
+    BranchNames (allbranches, fTree->GetListOfBranches(), include_children, include_inactive);
     return allbranches;
   }
-
-  static void ActiveBranchNames (TObjArray* list, std::string& allbranches, const char* pre="") {
-    if (!list) return;
-    Int_t nbranches = list->GetEntriesFast();
-    for (Int_t i = 0; i < nbranches; ++i) {
-      if (TBranch* branch = dynamic_cast<TBranch*>(list->UncheckedAt(i))) {
-        if (!branch->TestBit(kDoNotProcess)) {
-          if (allbranches.size()) allbranches += ", ";
-          allbranches += pre;
-          allbranches += branch->GetName();
-        }
-        std::string newpre = pre;
-        newpre += branch->GetName();
-        newpre += ".";
-        ActiveBranchNames (branch->GetListOfBranches(), allbranches, newpre.c_str());
-      }
-    }
-  }
-
 
   // Forwards to TTree with some extra
   virtual TTreeIterator& GetEntry() {
@@ -202,12 +194,12 @@ public:
     Int_t nbytes = fTree->GetEntry(fIndex);
     if (nbytes >= 0) {
       if (fVerbose >= 1) {
-        std::string allbranches = ActiveBranchNames();
+        std::string allbranches = BranchNamesString();
         Info  ("GetEntry", "read %d bytes from entry %lld for branches: %s", nbytes, fIndex, allbranches.c_str());
       }
     } else {
       if (fVerbose >= 0) {
-        std::string allbranches = ActiveBranchNames();
+        std::string allbranches = BranchNamesString();
         Error ("GetEntry", "problem reading entry %lld for branches: %s", fIndex, allbranches.c_str());
       }
     }
@@ -222,12 +214,12 @@ public:
 
     if (nbytes >= 0) {
       if (fVerbose >= 1) {
-        std::string allbranches = ActiveBranchNames();
+        std::string allbranches = BranchNamesString();
         Info  ("Fill", "Filled %d bytes for entry %lld, branches: %s", nbytes, fIndex, allbranches.c_str());
       }
     } else {
       if (fVerbose >= 0) {
-        std::string allbranches = ActiveBranchNames();
+        std::string allbranches = BranchNamesString();
         Error ("Fill", "problem writing entry %lld for branches: %s", fIndex, allbranches.c_str());
       }
     }
@@ -240,7 +232,7 @@ public:
 
   Int_t Write (const char *name=0, Int_t option=0, Int_t bufsize=0) override {
     if (!(fWriting && fTree && fTree->GetDirectory())) return 0;
-    Int_t nbytes = fTree->Write(name,option,bufsize);
+    Int_t nbytes = fTree->Write (name, option, bufsize);
     if (fVerbose >= 1) Info ("Write", "wrote %d bytes to file %s", nbytes, fTree->GetDirectory()->GetName());
     fWriting = false;
     return nbytes;
@@ -279,15 +271,13 @@ public:
   template <typename T>
   TBranch* Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
     if (!fTree) {
-      if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
+      if (fVerbose >= 0) Error (tname<T>("Branch"), "no tree available");
       return nullptr;
     }
-    T def = type_default<T>();
-    BranchInfo* ibranch = NewBranch<T> (name, &def, leaflist, bufsize, splitlevel);
-    if (!ibranch) return nullptr;
-    TBranch* branch = ibranch->branch;
-    branch->ResetAddress();
-    return branch;
+    using V = typename std::remove_reference<T>::type;
+    V def = type_default<V>();
+    BranchInfo* ibranch = NewBranch<T> (name, std::forward<T>(def), leaflist, bufsize, splitlevel);
+    return ibranch->branch;
   }
 
   // Access to the current entry
@@ -297,23 +287,34 @@ public:
 
 
   template <typename T>
-  const T& Set(const char* name, const T& val) {
-    return Set<T> (name, val, GetLeaflist<T>(), fBufsize, fSplitlevel);
+  const T& Set(const char* name, T&& val) {
+    return Set<T> (name, std::forward<T>(val), GetLeaflist<T>(), fBufsize, fSplitlevel);
   }
 
   template <typename T>
-  const T& Set(const char* name, const T& val, const char* leaflist, Int_t bufsize, Int_t splitlevel)
+  const T& Set(const char* name, T&& val, const char* leaflist) {
+    return Set<T> (name, std::forward<T>(val), leaflist, fBufsize, fSplitlevel);
+  }
+
+  template <typename T>
+  const T& Set(const char* name, T&& val, const char* leaflist, Int_t bufsize) {
+    return Set<T> (name, std::forward<T>(val), leaflist, bufsize, fSplitlevel);
+  }
+
+  template <typename T>
+  const T& Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel)
   {
     TBranch* branch = nullptr;
     BranchInfo* ibranch = GetBranch<T> (name);
     if (!ibranch) {
       if (fIndex <= 0) {
-        NewBranch<T> (name, val, leaflist, bufsize, splitlevel);
-        return val;
+        ibranch = NewBranch<T> (name, std::forward<T>(val), leaflist, bufsize, splitlevel);
+        return std::any_cast<T&>(ibranch->value);
       } else {
-        T def = type_default<T>();
-        ibranch = NewBranch<T> (name, def, leaflist, bufsize, splitlevel);
-        if (!ibranch) return val;
+        using V = typename std::remove_reference<T>::type;
+        V def = type_default<V>();
+        ibranch = NewBranch<T> (name, std::forward<T>(def), leaflist, bufsize, splitlevel);
+        if (!ibranch->branch) return std::any_cast<T&>(ibranch->value);
         branch = ibranch->branch;
         if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex);
         for (Long64_t i = 0; i < fIndex; i++) {
@@ -321,8 +322,7 @@ public:
         }
       }
     }
-    ibranch->value.emplace<T>(val);
-    return val;
+    return ibranch->value.emplace<T>(std::forward<T>(val));
   }
 
   // Get value, returning a reference
@@ -347,31 +347,8 @@ public:
   }
 
   // Set the status for a branch and all its sub-branches.
-  void SetBranchStatusAll (bool status=true) {
-    SetBranchStatus (fTree->GetListOfBranches(), status, fVerbose);
-  }
-
-  static void SetBranchStatus (TBranch* branch, bool status=true, int verbose=0, const char* pre="") {
-    if (!branch) return;
-    if (verbose>=2) ::Info ("SetBranchStatus", "%s branch '%s%s'", status?"Enable":"Disable", pre, branch->GetName());
-    if (status) branch->ResetBit(kDoNotProcess);
-    else        branch->  SetBit(kDoNotProcess);
-    if (verbose>=2) {
-      std::string newpre = pre;
-      newpre += branch->GetName();
-      newpre += ".";
-      SetBranchStatus (branch->GetListOfBranches(), status, verbose, newpre.c_str());
-    } else {
-      SetBranchStatus (branch->GetListOfBranches(), status, verbose);
-    }
-  }
-
-  static void SetBranchStatus (TObjArray* list, bool status=true, int verbose=0, const char* pre="") {
-    if (!list) return;
-    Int_t nbranches = list->GetEntriesFast();
-    for (Int_t i = 0; i < nbranches; ++i) {
-      SetBranchStatus (dynamic_cast<TBranch*>(list->UncheckedAt(i)), status, verbose, pre);
-    }
+  void SetBranchStatusAll (bool status=true, bool include_children=true) {
+    SetBranchStatus (fTree->GetListOfBranches(), status, include_children, fVerbose);
   }
 
   // Convenience function to return the type name
@@ -408,14 +385,9 @@ protected:
       if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
       return nullptr;
     } else if (TBranch* branch = fTree->GetBranch(name)) {
-      T def = type_default<T>();
-      ibranch = SaveBranch<T> (name, branch, def);
-      if (!ibranch) return nullptr;
-      ibranch->Enable(fVerbose);
-      if (!SetBranch<T> (ibranch, name)) {
-        ibranch->EnableReset(fVerbose);
-        return nullptr;
-      }
+      ibranch = SaveBranch<T> (name, type_default<T>());
+      ibranch->branch = branch;
+      if (!SetBranch<T> (ibranch, name)) return nullptr;
       Int_t nread = branch->GetEntry (fIndex);
       if (nread < 0) {
         if (fVerbose >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, fIndex);
@@ -447,72 +419,63 @@ protected:
   }
 
   template <typename T>
-  BranchInfo* NewBranch (const char* name, T val, const char* leaflist=0, Int_t bufsize=32000, Int_t splitlevel=99) {
+  BranchInfo* NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
+    BranchInfo* ibranch = SaveBranch<T> (name, std::forward<T>(val));
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
-      return nullptr;
+      return ibranch;
     }
-    BranchInfo* ibranch = SaveBranch<T> (name, val);
     TBranch* branch;
+    using V = typename std::remove_reference<T>::type;
     if (leaflist && *leaflist) {
-      branch = fTree->Branch (name, std::any_cast<T>(&ibranch->value), leaflist, bufsize);
+      branch = fTree->Branch (name, std::any_cast<V>(&ibranch->value), leaflist, bufsize);
       if (!branch) {
         if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s'", name, leaflist);
-        return nullptr;
+        return ibranch;
       }
       if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s' of type '%s' @%p", name, leaflist, ibranch->value.type().name(), &ibranch->value);
     } else {
-      branch = fTree->Branch (name, std::any_cast<T>(&ibranch->value), bufsize, splitlevel);
+      branch = fTree->Branch (name, std::any_cast<V>(&ibranch->value), bufsize, splitlevel);
       if (!branch) {
         if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s'", name);
-        return nullptr;
+        return ibranch;
       }
       if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' of type '%s' @%p", name, ibranch->value.type().name(), &ibranch->value);
     }
-    fWriting = true;
-    return RegisterBranch<T> (ibranch, branch);
-  }
-
-  template <typename T>
-  BranchInfo* SaveBranch (const char* name, T& val) const {
-    return &(fBranches[name] = BranchInfo {nullptr, typeid(T).hash_code(), val});
-  }
-
-  template <typename T>
-  BranchInfo* SaveBranch (const char* name, TBranch* branch, T& val) const {
-    return RegisterBranch<T> (SaveBranch<T> (name, val), branch);
-  }
-
-  template <typename T>
-  BranchInfo* RegisterBranch (BranchInfo* ibranch, TBranch* branch) const {
-    if (!branch) return nullptr;
     ibranch->branch = branch;
-#ifdef FAST_ISOBJ
-    bool isobj = (branch->IsA() == TBranch::Class());
-#else
-    TClass* expectedClass = 0;
-    EDataType expectedType = kOther_t;
-    if (branch->GetExpectedType (expectedClass, expectedType)) {
-      if (fVerbose >= 0) Error (tname<T>("SaveBranch"), "GetExpectedType failed for branch '%s'", branch->GetName());
-      return ibranch;
-    }
-    bool isobj = (expectedClass != nullptr);
-#endif
-    if (isobj) ibranch->pvalue = std::any_cast<T>(&ibranch->value);
+    fWriting = true;
     return ibranch;
+  }
+
+  template <typename T>
+  BranchInfo* SaveBranch (const char* name, T&& val) const {
+    return &(fBranches[name] = BranchInfo {typeid(T).hash_code(), std::forward<T>(val)});
   }
 
   template <typename T>
   bool SetBranch (BranchInfo* ibranch, const char* name, const char* call="Get") const {
     Int_t stat=0;
-    bool isobj = ibranch->pvalue;
+    ibranch->Enable(fVerbose);
+    TBranch* branch = ibranch->branch;
+    bool isobj = false;
+    if (TClass::GetClass<T>() && branch->GetMother() == branch) {
+      TClass* expectedClass = 0;
+      EDataType expectedType = kOther_t;
+      if (branch->GetExpectedType (expectedClass, expectedType)) {
+        if (fVerbose >= 1) Info (tname<T>("SetBranch"), "GetExpectedType failed for branch '%s'", name);
+      } else {
+        if (expectedClass) isobj = true;
+      }
+    }
     if (isobj) {
-      stat = fTree->SetBranchAddress (name,             (T**)(&ibranch->pvalue));
+      ibranch->pvalue = std::any_cast<T>(&ibranch->value);
+      stat = fTree->SetBranchAddress (name,              (T**)(&ibranch->pvalue));
     } else {
-      stat = fTree->SetBranchAddress (name, std::any_cast<T >(&ibranch-> value));
+      stat = fTree->SetBranchAddress (name, std::any_cast<T  >(&ibranch-> value));
     }
     if (stat < 0) {
       if (fVerbose >= 0) Error (tname<T>(call), "failed to set branch '%s' %s address", name, (isobj?"object":"variable"));
+      ibranch->EnableReset(fVerbose);
       return false;
     }
     if   (fVerbose >= 1) Info  (tname<T>(call), "set branch '%s' %s address",           name, (isobj?"object":"variable"));
@@ -533,6 +496,47 @@ protected:
     return nbytes;
   }
 
+  static void SetBranchStatus (TObjArray* list, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr) {
+    if (!list) return;
+    Int_t nbranches = list->GetEntriesFast();
+    for (Int_t i = 0; i < nbranches; ++i) {
+      SetBranchStatus (dynamic_cast<TBranch*>(list->UncheckedAt(i)), status, include_children, verbose, pre);
+    }
+  }
+
+  static void SetBranchStatus (TBranch* branch, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr) {
+    if (!branch) return;
+    if (verbose>=2) ::Info ("SetBranchStatus", "%s branch '%s%s'", status?"Enable":"Disable", pre?pre->c_str():"", branch->GetName());
+    if (status) branch->ResetBit(kDoNotProcess);
+    else        branch->  SetBit(kDoNotProcess);
+    if (!include_children) return;
+    if (verbose >=2) {
+      std::string newpre;
+      if (pre) newpre += *pre;
+      newpre += branch->GetName();
+      newpre += ".";
+      SetBranchStatus (branch->GetListOfBranches(), status, include_children, verbose, &newpre);
+    } else {
+      SetBranchStatus (branch->GetListOfBranches(), status, include_children, verbose);
+    }
+  }
+
+  static void BranchNames (std::vector<std::string>& allbranches, TObjArray* list, bool include_children, bool include_inactive, const std::string& pre="") {
+    if (!list) return;
+    Int_t nbranches = list->GetEntriesFast();
+    for (Int_t i = 0; i < nbranches; ++i) {
+      if (TBranch* branch = dynamic_cast<TBranch*>(list->UncheckedAt(i))) {
+        if (include_inactive || !branch->TestBit(kDoNotProcess)) {
+          allbranches.emplace_back (pre+branch->GetName());
+        }
+        if (include_children) {
+          std::string newpre = pre + branch->GetName();
+          newpre += ".";
+          BranchNames (allbranches, branch->GetListOfBranches(), include_children, include_inactive, newpre);
+        }
+      }
+    }
+  }
 
   // Member variables
   Long64_t fIndex=0;

@@ -170,10 +170,6 @@ TEST(timingTests1, GetAddr) {
 // TTreeIterator test 2: write/read a bunch of doubles in a POD class
 // ==========================================================================================
 
-#define _NUM(x) #x
-#define NUM(x) _NUM(x)
-//constexpr size_t nx2 = NX2;
-
 // A simple user-defined POD class
 struct MyStruct {
   double x[nx2];
@@ -278,10 +274,9 @@ TEST(timingTests3, FillIter) {
   TTreeIterator titer ("test", verbose);
   double v = vinit;
   for (auto& e : titer.FillEntries(nfill3)) {
-    std::vector<double> vx;
-    vx.reserve(nx3);
-    for (size_t i=0; i<nx3; i++) vx.push_back(v++);
-    e["vx"] = vx;
+    std::vector<double> vx(nx3);
+    for (size_t i=0; i<nx3; i++) vx[i] = v++;
+    e["vx"] = std::move(vx);
   }
   Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type3, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill3*nx3), v);
