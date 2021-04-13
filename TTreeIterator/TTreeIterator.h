@@ -265,7 +265,8 @@ public:
   // Create empty branch
   template <typename T>
   TBranch* Branch (const char* name) {
-    return Branch<T> (name, GetLeaflist<T>(), fBufsize, fSplitlevel);
+    using V = typename std::remove_reference<T>::type;
+    return Branch<T> (name, GetLeaflist<V>(), fBufsize, fSplitlevel);
   }
 
   template <typename T>
@@ -288,7 +289,8 @@ public:
 
   template <typename T>
   const T& Set(const char* name, T&& val) {
-    return Set<T> (name, std::forward<T>(val), GetLeaflist<T>(), fBufsize, fSplitlevel);
+    using V = typename std::remove_reference<T>::type;
+    return Set<T> (name, std::forward<T>(val), GetLeaflist<V>(), fBufsize, fSplitlevel);
   }
 
   template <typename T>
@@ -430,14 +432,14 @@ protected:
     if (leaflist && *leaflist) {
       branch = fTree->Branch (name, std::any_cast<V>(&ibranch->value), leaflist, bufsize);
       if (!branch) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s'", name, leaflist);
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' of type '%s'", name, leaflist, typeid(T).name());
         return ibranch;
       }
       if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s' of type '%s' @%p", name, leaflist, ibranch->value.type().name(), &ibranch->value);
     } else {
       branch = fTree->Branch (name, std::any_cast<V>(&ibranch->value), bufsize, splitlevel);
       if (!branch) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s'", name);
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' of type '%s'", name, typeid(T).name());
         return ibranch;
       }
       if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' of type '%s' @%p", name, ibranch->value.type().name(), &ibranch->value);
