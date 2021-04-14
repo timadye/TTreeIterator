@@ -25,11 +25,9 @@ public:
                             const TTreeIterator& >     // reference
   {
   public:
-    iterator (TTreeIterator& entry, Long64_t first, Long64_t last, bool quiet=false) : fEntry(entry), fIndex(first), fEnd(last) {
-      if (!quiet && fEntry.fVerbose >= 1 && fEntry.fTree && fEntry.fTree->GetDirectory() && fEnd-fIndex>0)
-        ::Info ("TTreeIterator", "get %lld entries from tree '%s' in file %s", fEnd-fIndex, fEntry.fTree->GetName(), fEntry.fTree->GetDirectory()->GetName());
-    }
+    iterator (TTreeIterator& entry, Long64_t first, Long64_t last) : fEntry(entry), fIndex(first), fEnd(last) {}
 //  iterator (const iterator& in) : fEntry(in.fEntry), fIndex(in.fIndex), fEnd(in.fEnd) {}  // default probably OK
+    ~iterator() { fEntry.reset(); }
     iterator& operator++() { ++fIndex; return *this; }
     iterator operator++(int) { iterator it = *this; ++fIndex; return it; }
     bool operator!= (const iterator& other) const { return fIndex != other.fIndex; }
@@ -48,15 +46,7 @@ public:
 
   class fill_iterator : public iterator {
   public:
-    fill_iterator (TTreeIterator& entry, Long64_t first, Long64_t last, bool quiet=false) : iterator(entry,first,last,true) {
-      if (!quiet && fEntry.fVerbose >= 1 && fEntry.fTree && fEntry.fTree->GetDirectory()) {
-        if (fEnd < fIndex) {
-          ::Info ("TTreeIterator", "fill entries into tree '%s' in file %s", fEntry.fTree->GetName(), fEntry.fTree->GetDirectory()->GetName());
-        } else if (fEnd > fIndex) {
-          ::Info ("TTreeIterator", "fill %lld entries into tree '%s' in file %s", fEnd-fIndex, fEntry.fTree->GetName(), fEntry.fTree->GetDirectory()->GetName());
-        }
-      }
-    }
+    fill_iterator (TTreeIterator& entry, Long64_t first, Long64_t last) : iterator(entry,first,last) {}
     ~fill_iterator() { fEntry.Write(); }
     fill_iterator& operator++() { fEntry.Fill(); fIndex++; return *this; }
     fill_iterator operator++(int) { fill_iterator it = *this; ++*this; return it; }
@@ -95,12 +85,13 @@ public:
     std::any value;
     void* pvalue=nullptr;
     TBranch* branch=nullptr;
-    bool disabled=false;
-    void  Enable     (int verbose=0) { if ( (disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
-    void  EnableReset(int verbose=0) { if (  disabled)                                   SetBranchStatus (false, verbose); }
-    void Disable     (int verbose=0) { if (!(disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus (false, verbose); }
-    void DisableReset(int verbose=0) { if (! disabled)                                   SetBranchStatus ( true, verbose); }
+    bool was_disabled=false;
+    void  Enable     (int verbose=0) { if ( (was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
+    void  EnableReset(int verbose=0) { if (  was_disabled)                                   SetBranchStatus (false, verbose); }
+    void Disable     (int verbose=0) { if (!(was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus (false, verbose); }
+    void DisableReset(int verbose=0) { if (! was_disabled)                                   SetBranchStatus ( true, verbose); }
     void SetBranchStatus (bool status=true, int verbose=0) { TTreeIterator::SetBranchStatus (branch, status, true, verbose); }
+    void ResetAddress() { if (branch) branch->ResetAddress(); }
   };
 
 #ifdef SHOW_BranchInfo   // and rename BranchInfo above to BranchInfo2
@@ -119,6 +110,7 @@ public:
   TTreeIterator (const char* name="", int verbose=0)
     : TNamed(name, ""),
       fTree(new TTree(name,"")),
+      fTreeOwned(true),
       fVerbose(verbose) {}
   TTreeIterator (TTree* tree, int verbose=0)
     : TNamed(tree ? tree->GetName() : "", tree ? tree->GetTitle() : ""),
@@ -136,17 +128,27 @@ public:
     if (!fTree)
       Error("TTreeIterator", "TTree '%s' not found in file.", keyname);
     else {
+      fTreeOwned = true;
       SetTitle(fTree->GetTitle());
       fIndex = fTree->GetEntries();
       SetBranchStatusAll(false);
     }
   }
-//~TTreeIterator() override {}   // default probably OK
+  ~TTreeIterator() override {
+    if (fTreeOwned) delete fTree;
+  }
 
 
   // Access to underlying tree
   TTree* operator->() const { return GetTree(); }
   TTree* GetTree() const { return fTree; }
+  TTree* SetTree (TTree* tree) {
+    reset();
+    if (fTreeOwned) delete fTree;
+    fTree = tree;
+    fTreeOwned = false;
+    return fTree;
+  }
 
   // Forwards to TTree
   TTreeIterator& GetEntry (Long64_t entry) {
@@ -193,7 +195,7 @@ public:
 
     Int_t nbytes = fTree->GetEntry(fIndex);
     if (nbytes >= 0) {
-      if (fVerbose >= 1) {
+      if (fVerbose >= 2) {
         std::string allbranches = BranchNamesString();
         Info  ("GetEntry", "read %d bytes from entry %lld for branches: %s", nbytes, fIndex, allbranches.c_str());
       }
@@ -213,7 +215,7 @@ public:
     Int_t nbytes = fTree->Fill();
 
     if (nbytes >= 0) {
-      if (fVerbose >= 1) {
+      if (fVerbose >= 2) {
         std::string allbranches = BranchNamesString();
         Info  ("Fill", "Filled %d bytes for entry %lld, branches: %s", nbytes, fIndex, allbranches.c_str());
       }
@@ -243,11 +245,21 @@ public:
   TTreeIterator& setVerbose (int    verbose) { fVerbose = verbose; return *this; }
   Long64_t index()   const { return fIndex;   }
   int      verbose() const { return fVerbose; }
-  virtual void reset() { fIndex = 0; }
+  virtual void reset() {
+    fIndex = 0;
+    for (auto& it : fBranches) {
+      BranchInfo& ibranch = it.second;
+      ibranch.ResetAddress();
+      ibranch.EnableReset();
+    }
+    fBranches.clear();
+  }
 
   // std::iterator interface
   iterator begin() {
     Long64_t last = fTree ? fTree->GetEntries() : 0;
+    if (fVerbose >= 1 && last>0 && fTree->GetDirectory())
+      Info ("TTreeIterator", "get %lld entries from tree '%s' in file %s", last, fTree->GetName(), fTree->GetDirectory()->GetName());
     return iterator (*this, 0,    last);
   }
 
@@ -259,7 +271,14 @@ public:
   fill_iterator FillEntries (Long64_t nfill=-1) {
     if (!fTree) return fill_iterator (*this,0,0);
     Long64_t np = fTree->GetEntries();
-    return fill_iterator (*this, np, nfill>=0 ? np+nfill : -1, true);
+    if (fVerbose >= 1 && fTree->GetDirectory()) {
+      if (nfill < 0) {
+        Info ("TTreeIterator", "fill entries into tree '%s' in file %s", fTree->GetName(), fTree->GetDirectory()->GetName());
+      } else if (nfill > 0) {
+        Info ("TTreeIterator", "fill %lld entries into tree '%s' in file %s", nfill, fTree->GetName(), fTree->GetDirectory()->GetName());
+      }
+    }
+    return fill_iterator (*this, np, nfill>=0 ? np+nfill : -1);
   }
 
   // Create empty branch
@@ -544,6 +563,7 @@ protected:
   Long64_t fIndex=0;
   mutable std::map<std::string,BranchInfo> fBranches;
   TTree* fTree=nullptr;
+  bool fTreeOwned=false;
   Int_t fBufsize=32000;
   Int_t fSplitlevel=99;
   int fVerbose=0;

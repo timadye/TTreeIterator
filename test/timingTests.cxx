@@ -19,7 +19,7 @@
 #define DO_ADDR
 #define DO_FILL
 #define DO_GET
-//#define FULL_CHECKS
+#define FULL_CHECKS
 
 const Long64_t nfill1 = 500000;
 const Long64_t nfill2 = 100000;
@@ -28,7 +28,7 @@ constexpr size_t nx1 = 20;
 constexpr size_t nx2 = 100;
 constexpr size_t nx3 = 100;
 const double vinit = 42.3;  // fill each element with a different value starting from here
-const int verbose = 0;
+const int verbose = 1;
 
 // ==========================================================================================
 // Global definitions
@@ -82,7 +82,7 @@ TEST(timingTests1, FillIter) {
 
   std::vector<std::string> bnames;
   bnames.reserve(nx1);
-  for (int i=0; i<nx1; i++) bnames.push_back (Form("x%03d",i));
+  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
 
   TTreeIterator titer ("test", verbose);
   double v = vinit;
@@ -105,7 +105,7 @@ TEST(timingTests1, GetIter) {
 
   std::vector<std::string> bnames;
   bnames.reserve(nx1);
-  for (int i=0; i<nx1; i++) bnames.push_back (Form("x%03d",i));
+  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
 
   double v = vinit;
   for (auto& e : titer) {
@@ -136,10 +136,10 @@ TEST(timingTests1, FillAddr) {
     tree->Fill();
   }
   f.Write();
-  tree->ResetBranchAddresses();
 
   Int_t nbranches = ShowBranches (f, tree, branch_type1, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill1), v);
+  delete tree;
 }
 
 TEST(timingTests1, GetAddr) {
@@ -163,7 +163,7 @@ TEST(timingTests1, GetAddr) {
     for (auto& x : vals) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vals.data());
 #endif
   }
-  tree->ResetBranchAddresses();
+  delete tree;
 }
 
 // ==========================================================================================
@@ -231,10 +231,10 @@ TEST(timingTests2, FillAddr) {
     tree->Fill();
   }
   f.Write();
-  tree->ResetBranchAddresses();
 
   Int_t nbranches = ShowBranches (f, tree, branch_type2, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill2*nx2), v);
+  delete tree;
 }
 
 TEST(timingTests2, GetAddr) {
@@ -258,7 +258,7 @@ TEST(timingTests2, GetAddr) {
     for (auto& x : M.x) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-&M.x[0]);
 #endif
   }
-  tree->ResetBranchAddresses();
+  delete tree;
 }
 
 // ==========================================================================================
@@ -322,10 +322,10 @@ TEST(timingTests3, FillAddr) {
     tree->Fill();
   }
   f.Write();
-  tree->ResetBranchAddresses();
 
   Int_t nbranches = ShowBranches (f, tree, branch_type3, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill3*nx3), v);
+  delete tree;
 }
 
 TEST(timingTests3, GetAddr) {
@@ -349,5 +349,5 @@ TEST(timingTests3, GetAddr) {
     for (auto& x : *vx) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vx->data());
 #endif
   }
-  tree->ResetBranchAddresses();
+  delete tree;
 }
