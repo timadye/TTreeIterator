@@ -29,7 +29,7 @@ public:
 //  iterator (const iterator& in) : fEntry(in.fEntry), fIndex(in.fIndex), fEnd(in.fEnd) {}  // default probably OK
     ~iterator() { fEntry.reset(); }
     iterator& operator++() { ++fIndex; return *this; }
-    iterator operator++(int) { iterator it = *this; ++fIndex; return it; }
+    iterator  operator++(int) { iterator it = *this; ++fIndex; return it; }
     bool operator!= (const iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const iterator& other) const { return fIndex == other.fIndex; }
     const TTreeIterator& operator*() const { return fIndex < fEnd ? fEntry.setIndex(fIndex).GetEntry() : fEntry; }
@@ -49,7 +49,7 @@ public:
     fill_iterator (TTreeIterator& entry, Long64_t first, Long64_t last) : iterator(entry,first,last) {}
     ~fill_iterator() { fEntry.Write(); }
     fill_iterator& operator++() { fEntry.Fill(); fIndex++; return *this; }
-    fill_iterator operator++(int) { fill_iterator it = *this; ++*this; return it; }
+    fill_iterator  operator++(int) { fill_iterator it = *this; ++*this; return it; }
     TTreeIterator& operator*() const { return fEntry; }
     fill_iterator begin() { return fill_iterator (fEntry, fIndex, fEnd); }
     fill_iterator end()   { return fill_iterator (fEntry, fEnd,   fEnd); }
@@ -63,55 +63,40 @@ public:
     template <typename T> operator T&() const { return fEntry.Get<T>(fName); }
 //  template <typename T> T operator+ (const T& v) const { return T(*this) +  v; }
 //  template <typename T> T operator+=(const T& v)       { return T(*this) += v; }
-  private:
+  protected:
     const TTreeIterator& fEntry;
     const char* fName;
   };
 
-
-  class Setter {
+  // Wrapper class to allow setting through operator[]
+  class Setter : public Getter {
   public:
-    Setter(TTreeIterator& entry, const char* name) : fEntry(entry), fName(name) {}
-    template <typename T> operator const T&() const { return fEntry.Get<T>(fName); }
-    template <typename T> operator T&() const { return fEntry.Get<T>(fName); }
-    template <typename T> const T& operator= (T&& val) { return fEntry.Set<T>(fName, std::forward<T>(val)); }
-  private:
-    TTreeIterator& fEntry;
-    const char* fName;
+    Setter(TTreeIterator& entry, const char* name) : Getter(entry,name) {}
+    template <typename T> const T& operator= (T&& val) { return const_cast<TTreeIterator&>(fEntry).Set<T>(fName, std::forward<T>(val)); }
   };
 
+  // Hack to allow access to protected method TTree::CheckBranchAddressType()
   struct TTreeProtected : public TTree {
     static TTreeProtected& Access (TTree& t) { return (TTreeProtected&) t; }
     using TTree::CheckBranchAddressType;
   };
 
+  // Our local cache of branch information
   struct BranchInfo {
-    size_t type_hash;
     std::any value;
-    void* pvalue=nullptr;
-    void** puser=nullptr;
-    TBranch* branch=nullptr;
-    bool isobj=false;
-    bool was_disabled=false;
+    void*    pvalue = nullptr;
+    void**   puser  = nullptr;
+    TBranch* branch = nullptr;
+    bool     set    = false;
+    bool     isobj  = false;
+    bool     was_disabled = false;
     void  Enable     (int verbose=0) { if ( (was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
     void  EnableReset(int verbose=0) { if (  was_disabled)                                   SetBranchStatus (false, verbose); }
     void Disable     (int verbose=0) { if (!(was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus (false, verbose); }
     void DisableReset(int verbose=0) { if (! was_disabled)                                   SetBranchStatus ( true, verbose); }
     void SetBranchStatus (bool status=true, int verbose=0) { TTreeIterator::SetBranchStatus (branch, status, true, verbose); }
-    void ResetAddress() { if (branch) branch->ResetAddress(); }
+    void ResetAddress() { if (branch && set && !puser) branch->ResetAddress(); }
   };
-
-#ifdef SHOW_BranchInfo   // and rename BranchInfo above to BranchInfo2
-  struct BranchInfo : public BranchInfo2 {
-    BranchInfo() { printf("BranchInfo()@%p\n",this); }
-    BranchInfo(TBranch* b,size_t t,const std::any& v) : BranchInfo2{b,t,v} { printf("BranchInfo(init)@%p\n",this); }
-    BranchInfo(const BranchInfo& o) : BranchInfo2{o} { printf("BranchInfo(BranchInfo())@%p\n",this); }
-    BranchInfo(BranchInfo&& o) : BranchInfo2{o} { printf("BranchInfo(BranchInfo&&())@%p\n",this); }
-    ~BranchInfo() { printf("~BranchInfo()@%p\n",this); }
-    BranchInfo& operator=(const BranchInfo& o) { BranchInfo2::operator=(o); printf("BranchInfo = BranchInfo()@%p\n",this); return *this; }
-    BranchInfo& operator=(      BranchInfo&&o) { BranchInfo2::operator=(o); printf("BranchInfo = BranchInfo&&()@%p\n",this); return *this; }
-  };
-#endif
 
   // Constructors and destructors
   TTreeIterator (const char* name="", int verbose=0)
@@ -332,21 +317,23 @@ public:
   template <typename T>
   const T& Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel)
   {
+    using V = typename std::remove_reference<T>::type;
     TBranch* branch = nullptr;
     BranchInfo* ibranch = GetBranch<T> (name);
     if (!ibranch) {
       if (fIndex <= 0) {
         ibranch = NewBranch<T> (name, std::forward<T>(val), leaflist, bufsize, splitlevel);
-        return std::any_cast<T&>(ibranch->value);
+        return std::any_cast<V&>(ibranch->value);
       } else {
-        using V = typename std::remove_reference<T>::type;
-        V def = type_default<V>();
-        ibranch = NewBranch<T> (name, std::forward<T>(def), leaflist, bufsize, splitlevel);
-        if (!ibranch->branch) return std::any_cast<T&>(ibranch->value);
+        {
+          V def = type_default<V>();
+          ibranch = NewBranch<T> (name, std::forward<T>(def), leaflist, bufsize, splitlevel);
+        }
+        if (!ibranch->set) return std::any_cast<V&>(ibranch->value);
         branch = ibranch->branch;
         if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, fIndex);
         for (Long64_t i = 0; i < fIndex; i++) {
-          FillBranch<T> (branch, name, 1);
+          FillBranch<T> (branch, name);
         }
       }
     }
@@ -356,38 +343,34 @@ public:
   // Get value, returning a reference
   template <typename T>
   T& Get(const char* name) const {
-    static T def {type_default<T>()};   // static default value for each type to allow us to return by reference
+    static T def {type_default<T>()};   // static default value for each type to allow us to return by reference (NB. sticks around until program exit)
     return Get<T>(name, def);
   }
 
   // Get() allowing the default value (returned if there is an error) to be specified.
   template <typename T>
   T& Get(const char* name, T& val) const {
-    if (BranchInfo* ibranch = GetImpl<T>(name)) {
-      if (!ibranch->puser) {
-        return std::any_cast<T&>(ibranch->value);
-      } else if (ibranch->isobj) {
-        if (ibranch->puser && *ibranch->puser)
-          return **(T**)ibranch->puser;
-      } else {
-        if (ibranch->puser)
-          return  *(T* )ibranch->puser;
-      }
-    }
-    return val;
+    return const_cast<T&> (Get<T> (name, const_cast<const T&>(val)));
   }
 
   template <typename T>
   const T& Get(const char* name, const T& val) const {
     if (BranchInfo* ibranch = GetImpl<T>(name)) {
-      if (!ibranch->puser) {
-        return std::any_cast<T&>(ibranch->value);
-      } else if (ibranch->isobj) {
-        if (ibranch->puser && *ibranch->puser)
-          return **(T**)ibranch->puser;
-      } else {
-        if (ibranch->puser)
-          return  *(T* )ibranch->puser;
+      if (ibranch->set) {
+        if (!ibranch->puser) {
+          T* pval = std::any_cast<T>(&ibranch->value);
+          if (ibranch->pvalue && ibranch->pvalue != pval) {
+            if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' object address changed from our @%p to @%p", name, pval, ibranch->pvalue);
+            ibranch->puser = &ibranch->pvalue;
+          } else
+            return *pval;
+        } else if (ibranch->isobj) {
+          if (ibranch->puser && *ibranch->puser)
+            return **(T**)ibranch->puser;
+        } else {
+          if (ibranch->puser)
+            return  *(T* )ibranch->puser;
+        }
       }
     }
     return val;
@@ -428,11 +411,10 @@ protected:
   BranchInfo* GetImpl(const char* name) const {
     BranchInfo* ibranch = GetBranch<T> (name);
     if (ibranch) return ibranch;
+    ibranch = SaveBranch<T> (name, type_default<T>());
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
-      return nullptr;
     } else if (TBranch* branch = fTree->GetBranch(name)) {
-      ibranch = SaveBranch<T> (name, type_default<T>());
       ibranch->branch = branch;
       if (!SetBranch<T> (ibranch, name)) return nullptr;
       if (ibranch->puser) return ibranch;  // already read value
@@ -453,28 +435,27 @@ protected:
 
   template <typename T>
   BranchInfo* GetBranch (const char* name) const {
-    auto it = fBranches.find(name);
-    if (it != fBranches.end()) {
-      BranchInfo* ibranch = &it->second;
-      if (ibranch->type_hash && ibranch->type_hash == typeid(T).hash_code()) {
-        if (fVerbose >= 2) Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, ibranch->value.type().name(), &ibranch->value);
-        return ibranch;
-      } else {
-        if (fVerbose >= 1) Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p, but doesn't match requested type '%s'", name, ibranch->value.type().name(), &ibranch->value, typeid(T).name());
-      }
+    auto it = fBranches.find({name,typeid(T).hash_code()});
+    if (it == fBranches.end()) return nullptr;
+    BranchInfo* ibranch = &it->second;
+    if (fVerbose >= 2) {
+      if (ibranch->puser)
+        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, typeid(T).name(), ibranch->puser);
+      else
+        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, typeid(T).name(), &ibranch->value);
     }
-    return nullptr;
+    return ibranch;
   }
 
   template <typename T>
   BranchInfo* NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
+    using V = typename std::remove_reference<T>::type;
     BranchInfo* ibranch = SaveBranch<T> (name, std::forward<T>(val));
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
       return ibranch;
     }
     TBranch* branch;
-    using V = typename std::remove_reference<T>::type;
     if (leaflist && *leaflist) {
       branch = fTree->Branch (name, std::any_cast<V>(&ibranch->value), leaflist, bufsize);
       if (!branch) {
@@ -491,13 +472,14 @@ protected:
       if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' of type '%s' @%p", name, ibranch->value.type().name(), &ibranch->value);
     }
     ibranch->branch = branch;
+    ibranch->set = true;
     fWriting = true;
     return ibranch;
   }
 
   template <typename T>
   BranchInfo* SaveBranch (const char* name, T&& val) const {
-    return &(fBranches[name] = BranchInfo {typeid(T).hash_code(), std::forward<T>(val)});
+    return &(fBranches[{name,typeid(T).hash_code()}] = BranchInfo {std::forward<T>(val)});
   }
 
   template <typename T>
@@ -516,17 +498,17 @@ protected:
       }
     }
     void* addr = branch->GetAddress();
-    if (addr) {
+    if (addr && !ibranch->was_disabled) {
       EDataType type = (!cls) ? TDataType::GetType(typeid(T)) : kOther_t;
       Int_t res = TTreeProtected::Access(*fTree) . CheckBranchAddressType (branch, cls, type, ibranch->isobj);
       if (res < 0) {
         if (fVerbose >= 0) Error (tname<T>(call), "branch '%s' %s existing address %p wrong type", name, (ibranch->isobj?"object":"variable"), addr);
         return false;
-      } else {
-        if (fVerbose >= 1) Info (tname<T>(call), "use branch '%s' %s existing address %p", name, (ibranch->isobj?"object":"variable"), addr);
-        ibranch->puser = (void**)addr;
-        return true;
       }
+      if   (fVerbose >= 1) Info  (tname<T>(call), "use branch '%s' %s existing address %p",        name, (ibranch->isobj?"object":"variable"), addr);
+      ibranch->puser = (void**)addr;
+      ibranch->set = true;
+      return true;
     }
     if (ibranch->isobj) {
       ibranch->pvalue = std::any_cast<T>(&ibranch->value);
@@ -543,19 +525,20 @@ protected:
       return false;
     }
     if   (fVerbose >= 1) Info  (tname<T>(call), "set branch '%s' %s address %p",           name, (ibranch->isobj?"object":"variable"), addr);
+    ibranch->set = true;
     return true;
   }
 
   template <typename T>
-  Int_t FillBranch (TBranch* branch, const char* name, int quiet=0) {
+  Int_t FillBranch (TBranch* branch, const char* name) {
     Int_t nbytes = branch->Fill();
     if (nbytes > 0) {
       fWriting = true;
-      if (fVerbose-quiet >= 1) Info (tname<T>("Set"), "filled branch '%s' with %d bytes for entry %lld", name, nbytes, fIndex);
+      if (fVerbose >= 2) Info  (tname<T>("Set"), "filled branch '%s' with %d bytes for entry %lld", name, nbytes, fIndex);
     } else if (nbytes == 0) {
-      if (fVerbose >= 0) Error (tname<T>("Set"), "no data filled in branch '%s' for entry %lld", name, fIndex);
+      if (fVerbose >= 0) Error (tname<T>("Set"), "no data filled in branch '%s' for entry %lld",    name,         fIndex);
     } else {
-      if (fVerbose >= 0) Error (tname<T>("Set"), "error filling branch '%s' for entry %lld", name, fIndex);
+      if (fVerbose >= 0) Error (tname<T>("Set"), "error filling branch '%s' for entry %lld",        name,         fIndex);
     }
     return nbytes;
   }
@@ -604,7 +587,7 @@ protected:
 
   // Member variables
   Long64_t fIndex=0;
-  mutable std::map<std::string,BranchInfo> fBranches;
+  mutable std::map<std::pair<std::string,size_t>,BranchInfo> fBranches;
   TTree* fTree=nullptr;
   bool fTreeOwned=false;
   Int_t fBufsize=32000;
