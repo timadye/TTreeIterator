@@ -80,11 +80,18 @@ public:
     const char* fName;
   };
 
+  struct TTreeProtected : public TTree {
+    static TTreeProtected& Access (TTree& t) { return (TTreeProtected&) t; }
+    using TTree::CheckBranchAddressType;
+  };
+
   struct BranchInfo {
     size_t type_hash;
     std::any value;
     void* pvalue=nullptr;
+    void** puser=nullptr;
     TBranch* branch=nullptr;
+    bool isobj=false;
     bool was_disabled=false;
     void  Enable     (int verbose=0) { if ( (was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
     void  EnableReset(int verbose=0) { if (  was_disabled)                                   SetBranchStatus (false, verbose); }
@@ -350,21 +357,40 @@ public:
   template <typename T>
   T& Get(const char* name) const {
     static T def {type_default<T>()};   // static default value for each type to allow us to return by reference
-    BranchInfo* ibranch = GetImpl<T>(name);
-    return ibranch ? std::any_cast<T&>(ibranch->value) : def;
+    return Get<T>(name, def);
   }
 
   // Get() allowing the default value (returned if there is an error) to be specified.
   template <typename T>
   T& Get(const char* name, T& val) const {
-    BranchInfo* ibranch = GetImpl<T>(name);
-    return ibranch ? std::any_cast<T&>(ibranch->value) : val;
+    if (BranchInfo* ibranch = GetImpl<T>(name)) {
+      if (!ibranch->puser) {
+        return std::any_cast<T&>(ibranch->value);
+      } else if (ibranch->isobj) {
+        if (ibranch->puser && *ibranch->puser)
+          return **(T**)ibranch->puser;
+      } else {
+        if (ibranch->puser)
+          return  *(T* )ibranch->puser;
+      }
+    }
+    return val;
   }
 
   template <typename T>
   const T& Get(const char* name, const T& val) const {
-    BranchInfo* ibranch = GetImpl<T>(name);
-    return ibranch ? std::any_cast<T&>(ibranch->value) : val;
+    if (BranchInfo* ibranch = GetImpl<T>(name)) {
+      if (!ibranch->puser) {
+        return std::any_cast<T&>(ibranch->value);
+      } else if (ibranch->isobj) {
+        if (ibranch->puser && *ibranch->puser)
+          return **(T**)ibranch->puser;
+      } else {
+        if (ibranch->puser)
+          return  *(T* )ibranch->puser;
+      }
+    }
+    return val;
   }
 
   // Set the status for a branch and all its sub-branches.
@@ -409,6 +435,7 @@ protected:
       ibranch = SaveBranch<T> (name, type_default<T>());
       ibranch->branch = branch;
       if (!SetBranch<T> (ibranch, name)) return nullptr;
+      if (ibranch->puser) return ibranch;  // already read value
       Int_t nread = branch->GetEntry (fIndex);
       if (nread < 0) {
         if (fVerbose >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, fIndex);
@@ -478,28 +505,44 @@ protected:
     Int_t stat=0;
     ibranch->Enable(fVerbose);
     TBranch* branch = ibranch->branch;
-    bool isobj = false;
-    if (TClass::GetClass<T>() && branch->GetMother() == branch) {
+    TClass* cls = TClass::GetClass<T>();
+    if (cls && branch->GetMother() == branch) {
       TClass* expectedClass = 0;
       EDataType expectedType = kOther_t;
       if (branch->GetExpectedType (expectedClass, expectedType)) {
         if (fVerbose >= 1) Info (tname<T>("SetBranch"), "GetExpectedType failed for branch '%s'", name);
       } else {
-        if (expectedClass) isobj = true;
+        if (expectedClass) ibranch->isobj = true;
       }
     }
-    if (isobj) {
+    void* addr = branch->GetAddress();
+    if (addr) {
+      EDataType type = (!cls) ? TDataType::GetType(typeid(T)) : kOther_t;
+      Int_t res = TTreeProtected::Access(*fTree) . CheckBranchAddressType (branch, cls, type, ibranch->isobj);
+      if (res < 0) {
+        if (fVerbose >= 0) Error (tname<T>(call), "branch '%s' %s existing address %p wrong type", name, (ibranch->isobj?"object":"variable"), addr);
+        return false;
+      } else {
+        if (fVerbose >= 1) Info (tname<T>(call), "use branch '%s' %s existing address %p", name, (ibranch->isobj?"object":"variable"), addr);
+        ibranch->puser = (void**)addr;
+        return true;
+      }
+    }
+    if (ibranch->isobj) {
       ibranch->pvalue = std::any_cast<T>(&ibranch->value);
-      stat = fTree->SetBranchAddress (name,              (T**)(&ibranch->pvalue));
+      addr = &ibranch->pvalue;
+      stat = fTree->SetBranchAddress (name, (T**)(&ibranch->pvalue));
     } else {
-      stat = fTree->SetBranchAddress (name, std::any_cast<T  >(&ibranch-> value));
+      T* val = std::any_cast<T>(&ibranch->value);
+      addr = val;
+      stat = fTree->SetBranchAddress (name, val);
     }
     if (stat < 0) {
-      if (fVerbose >= 0) Error (tname<T>(call), "failed to set branch '%s' %s address", name, (isobj?"object":"variable"));
+      if (fVerbose >= 0) Error (tname<T>(call), "failed to set branch '%s' %s address %p", name, (ibranch->isobj?"object":"variable"), addr);
       ibranch->EnableReset(fVerbose);
       return false;
     }
-    if   (fVerbose >= 1) Info  (tname<T>(call), "set branch '%s' %s address",           name, (isobj?"object":"variable"));
+    if   (fVerbose >= 1) Info  (tname<T>(call), "set branch '%s' %s address %p",           name, (ibranch->isobj?"object":"variable"), addr);
     return true;
   }
 
