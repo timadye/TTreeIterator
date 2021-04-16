@@ -49,11 +49,12 @@ inline const char* type_name (const char* varname=0)
 // See TestObj below for an example (only public inheritance from ShowConstructors<TestObj> required).
 template <class T>
 struct ShowConstructors {
+  struct quiet {};
   ShowConstructors()                                     { Print ("%1$s() @%3$p\n",this);           }
-  ShowConstructors(int)                                  {                                          }
   void init() const                                      { Print ("%1$s(%2$s) @%3$p\n",this);       }
   ShowConstructors(const ShowConstructors& o)            { Print ("%1$s(%1$s(%2$s)) @%3$p\n",&o);   }
   ShowConstructors(      ShowConstructors&&o)            { Print ("%1$s(%1$s&&(%2$s)) @%3$p\n",&o); }
+  ShowConstructors(const ShowConstructors::quiet& q) {}  // default constructor, but without Print()
   ~ShowConstructors()                                    { Print ("~%1$s(%2$s) @%3$p\n",this); skip=false; }
   void destroy() const                                   { Print ("~%1$s(%2$s) @%3$p\n",this); skip=true;  }
   ShowConstructors& operator=(const ShowConstructors& o) { Print ("%1$s = %1$s(%2$s) @%3$p\n",&o);   return *this; }
@@ -73,8 +74,8 @@ template <class T> bool ShowConstructors<T>::skip    = false;
 // A simple test ROOT object with instrumentation
 class TestObj : public TNamed, public ShowConstructors<TestObj> {
 public:
-  TestObj(Double_t v)                                         : TNamed(),            value(v), ShowConstructors(0) { ShowConstructors::init(); }
-  TestObj(Double_t v, const char* name, const char* title="") : TNamed(name, title), value(v), ShowConstructors(0) { ShowConstructors::init(); }
+  TestObj(Double_t v)                                         : TNamed(),            value(v), ShowConstructors(ShowConstructors::quiet()) { ShowConstructors::init(); }
+  TestObj(Double_t v, const char* name, const char* title="") : TNamed(name, title), value(v), ShowConstructors(ShowConstructors::quiet()) { ShowConstructors::init(); }
   ~TestObj() { ShowConstructors::destroy(); value=-3.0; }
   TestObj()                            = default;  // rule of 5
   TestObj(const TestObj& o)            = default;  // rule of 5
