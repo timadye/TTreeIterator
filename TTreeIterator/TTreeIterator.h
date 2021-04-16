@@ -13,6 +13,8 @@
 #include "TTree.h"
 #include "TError.h"
 
+#include "TTreeIterator_detail.h"
+
 class TTreeIterator : public TNamed {
 public:
 
@@ -440,9 +442,9 @@ protected:
     BranchInfo* ibranch = &it->second;
     if (fVerbose >= 2) {
       if (ibranch->puser)
-        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, typeid(T).name(), ibranch->puser);
+        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), ibranch->puser);
       else
-        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, typeid(T).name(), &ibranch->value);
+        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), &ibranch->value);
     }
     return ibranch;
   }
@@ -459,17 +461,17 @@ protected:
     if (leaflist && *leaflist) {
       branch = fTree->Branch (name, std::any_cast<V>(&ibranch->value), leaflist, bufsize);
       if (!branch) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' of type '%s'", name, leaflist, typeid(T).name());
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' of type '%s'", name, leaflist, type_name<T>());
         return ibranch;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s' of type '%s' @%p", name, leaflist, ibranch->value.type().name(), &ibranch->value);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' with leaves '%s' of type '%s' @%p", name, leaflist, type_name<T>(), &ibranch->value);
     } else {
       branch = fTree->Branch (name, std::any_cast<V>(&ibranch->value), bufsize, splitlevel);
       if (!branch) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' of type '%s'", name, typeid(T).name());
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' of type '%s'", name, type_name<T>());
         return ibranch;
       }
-      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' of type '%s' @%p", name, ibranch->value.type().name(), &ibranch->value);
+      if (fVerbose >= 1) Info (tname<T>("Set"), "create branch '%s' of type '%s' @%p", name, type_name<T>(), &ibranch->value);
     }
     ibranch->branch = branch;
     ibranch->set = true;

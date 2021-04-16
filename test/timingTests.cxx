@@ -84,12 +84,12 @@ TEST(timingTests1, FillIter) {
   bnames.reserve(nx1);
   for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
 
-  TTreeIterator titer ("test", verbose);
+  TTreeIterator iter ("test", verbose);
   double v = vinit;
-  for (auto& e : titer.FillEntries(nfill1)) {
-    for (auto& b : bnames) e[b.c_str()] = v++;
+  for (auto& entry : iter.FillEntries(nfill1)) {
+    for (auto& b : bnames) entry[b.c_str()] = v++;
   }
-  Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type1, "filled");
+  Int_t nbranches = ShowBranches (f, iter.GetTree(), branch_type1, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill1), v);
 }
 
@@ -97,10 +97,10 @@ TEST(timingTests1, GetIter) {
   TFile f ("test_timing1.root");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", &f, verbose);
-  ASSERT_TRUE(titer.GetTree()) << "no tree";
-  EXPECT_EQ(titer.GetEntries(), nfill1);
-  Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type1);
+  TTreeIterator iter ("test", &f, verbose);
+  ASSERT_TRUE(iter.GetTree()) << "no tree";
+  EXPECT_EQ(iter.GetEntries(), nfill1);
+  Int_t nbranches = ShowBranches (f, iter.GetTree(), branch_type1);
   EXPECT_EQ(nbranches, nx1);
 
   std::vector<std::string> bnames;
@@ -108,11 +108,11 @@ TEST(timingTests1, GetIter) {
   for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
 
   double v = vinit;
-  for (auto& e : titer) {
+  for (auto& entry : iter) {
     for (auto& b : bnames) {
-      double x = e[b.c_str()];
+      double x = entry[b.c_str()];
 #ifdef FULL_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",titer.index(),b.c_str());
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",iter.index(),b.c_str());
 #endif
     }
   }
@@ -182,14 +182,14 @@ TEST(timingTests2, FillIter) {
   TFile f ("test_timing2.root", "recreate");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", verbose);
+  TTreeIterator iter ("test", verbose);
   double v = vinit;
-  for (auto& e : titer.FillEntries(nfill2)) {
+  for (auto& entry : iter.FillEntries(nfill2)) {
     MyStruct M;
     for (auto& x : M.x) x = v++;
-    e["M"] = M;
+    entry["M"] = M;
   }
-  Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type2, "filled");
+  Int_t nbranches = ShowBranches (f, iter.GetTree(), branch_type2, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill2*nx2), v);
 }
 
@@ -198,17 +198,17 @@ TEST(timingTests2, GetIter) {
   TFile f ("test_timing2.root");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", &f, verbose);
-  ASSERT_TRUE(titer.GetTree()) << "no tree";
-  EXPECT_EQ(titer.GetEntries(), nfill2);
-  Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type2);
+  TTreeIterator iter ("test", &f, verbose);
+  ASSERT_TRUE(iter.GetTree()) << "no tree";
+  EXPECT_EQ(iter.GetEntries(), nfill2);
+  Int_t nbranches = ShowBranches (f, iter.GetTree(), branch_type2);
   EXPECT_EQ(nbranches, 1);
 
   double v = vinit;
-  for (auto& e : titer) {
-    const MyStruct& M = e["M"];
+  for (auto& entry : iter) {
+    const MyStruct& M = entry["M"];
 #ifdef FULL_CHECKS
-    for (auto& x : M.x) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",titer.index(),&x-&M.x[0]);
+    for (auto& x : M.x) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",iter.index(),&x-&M.x[0]);
 #endif
   }
 }
@@ -271,14 +271,14 @@ TEST(timingTests3, FillIter) {
   TFile f ("test_timing3.root", "recreate");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", verbose);
+  TTreeIterator iter ("test", verbose);
   double v = vinit;
-  for (auto& e : titer.FillEntries(nfill3)) {
+  for (auto& entry : iter.FillEntries(nfill3)) {
     std::vector<double> vx(nx3);
     for (size_t i=0; i<nx3; i++) vx[i] = v++;
-    e["vx"] = std::move(vx);
+    entry["vx"] = std::move(vx);
   }
-  Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type3, "filled");
+  Int_t nbranches = ShowBranches (f, iter.GetTree(), branch_type3, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill3*nx3), v);
 }
 
@@ -286,18 +286,18 @@ TEST(timingTests3, GetIter) {
   TFile f ("test_timing3.root");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  TTreeIterator titer ("test", &f, verbose);
-  ASSERT_TRUE(titer.GetTree()) << "no tree";
-  EXPECT_EQ(titer.GetEntries(), nfill3);
-  Int_t nbranches = ShowBranches (f, titer.GetTree(), branch_type3);
+  TTreeIterator iter ("test", &f, verbose);
+  ASSERT_TRUE(iter.GetTree()) << "no tree";
+  EXPECT_EQ(iter.GetEntries(), nfill3);
+  Int_t nbranches = ShowBranches (f, iter.GetTree(), branch_type3);
   EXPECT_EQ(nbranches, 1);
 
   double v = vinit;
-  for (auto& e : titer) {
-    const std::vector<double>& vx = e["vx"];
+  for (auto& entry : iter) {
+    const std::vector<double>& vx = entry["vx"];
     EXPECT_EQ (vx.size(), nx3);
 #ifdef FULL_CHECKS
-    for (auto& x : vx) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",titer.index(),&x-vx.data());
+    for (auto& x : vx) EXPECT_EQ (x, v++) << Form("entry %lld, element %d",iter.index(),&x-vx.data());
 #endif
   }
 }
