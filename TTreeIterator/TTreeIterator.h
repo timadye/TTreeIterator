@@ -321,7 +321,7 @@ public:
   {
     using V = typename std::remove_reference<T>::type;
     TBranch* branch = nullptr;
-    BranchInfo* ibranch = GetBranch<T> (name);
+    BranchInfo* ibranch = GetBranchInfo<T> (name);
     if (!ibranch) {
       if (fIndex <= 0) {
         ibranch = NewBranch<T> (name, std::forward<T>(val), leaflist, bufsize, splitlevel);
@@ -357,7 +357,7 @@ public:
 
   template <typename T>
   const T& Get(const char* name, const T& val) const {
-    if (BranchInfo* ibranch = GetImpl<T>(name)) {
+    if (BranchInfo* ibranch = GetBranch<T>(name)) {
       if (ibranch->set) {
         if (!ibranch->puser) {
           T* pval = std::any_cast<T>(&ibranch->value);
@@ -410,15 +410,15 @@ private:
 protected:
 
   template <typename T>
-  BranchInfo* GetImpl(const char* name) const {
-    BranchInfo* ibranch = GetBranch<T> (name);
+  BranchInfo* GetBranch(const char* name) const {
+    BranchInfo* ibranch = GetBranchInfo<T> (name);
     if (ibranch) return ibranch;
-    ibranch = SaveBranch<T> (name, type_default<T>());
+    ibranch = SetBranchInfo<T> (name, type_default<T>());
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Get"), "no tree available");
     } else if (TBranch* branch = fTree->GetBranch(name)) {
       ibranch->branch = branch;
-      if (!SetBranch<T> (ibranch, name)) return nullptr;
+      if (!SetBranchAddress<T> (ibranch, name)) return nullptr;
       if (ibranch->puser) return ibranch;  // already read value
       Int_t nread = branch->GetEntry (fIndex);
       if (nread < 0) {
@@ -436,15 +436,15 @@ protected:
   }
 
   template <typename T>
-  BranchInfo* GetBranch (const char* name) const {
+  BranchInfo* GetBranchInfo (const char* name) const {
     auto it = fBranches.find({name,typeid(T).hash_code()});
     if (it == fBranches.end()) return nullptr;
     BranchInfo* ibranch = &it->second;
     if (fVerbose >= 2) {
       if (ibranch->puser)
-        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), ibranch->puser);
+        Info (tname<T>("GetBranchInfo"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), ibranch->puser);
       else
-        Info (tname<T>("GetBranch"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), &ibranch->value);
+        Info (tname<T>("GetBranchInfo"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), &ibranch->value);
     }
     return ibranch;
   }
@@ -452,7 +452,7 @@ protected:
   template <typename T>
   BranchInfo* NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
     using V = typename std::remove_reference<T>::type;
-    BranchInfo* ibranch = SaveBranch<T> (name, std::forward<T>(val));
+    BranchInfo* ibranch = SetBranchInfo<T> (name, std::forward<T>(val));
     if (!fTree) {
       if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
       return ibranch;
@@ -480,12 +480,12 @@ protected:
   }
 
   template <typename T>
-  BranchInfo* SaveBranch (const char* name, T&& val) const {
+  BranchInfo* SetBranchInfo (const char* name, T&& val) const {
     return &(fBranches[{name,typeid(T).hash_code()}] = BranchInfo {std::forward<T>(val)});
   }
 
   template <typename T>
-  bool SetBranch (BranchInfo* ibranch, const char* name, const char* call="Get") const {
+  bool SetBranchAddress (BranchInfo* ibranch, const char* name, const char* call="Get") const {
     Int_t stat=0;
     ibranch->Enable(fVerbose);
     TBranch* branch = ibranch->branch;
@@ -494,7 +494,7 @@ protected:
       TClass* expectedClass = 0;
       EDataType expectedType = kOther_t;
       if (branch->GetExpectedType (expectedClass, expectedType)) {
-        if (fVerbose >= 1) Info (tname<T>("SetBranch"), "GetExpectedType failed for branch '%s'", name);
+        if (fVerbose >= 1) Info (tname<T>("SetBranchAddress"), "GetExpectedType failed for branch '%s'", name);
       } else {
         if (expectedClass) ibranch->isobj = true;
       }

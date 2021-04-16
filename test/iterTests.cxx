@@ -31,7 +31,7 @@
 const Long64_t nfill1 = 5;
 const Long64_t nfill2 = 4;
 const double vinit = 42.3;  // fill each element with a different value starting from here
-const int verbose = 2;
+const int verbose = 1;
 
 // ==========================================================================================
 // Global definitions
