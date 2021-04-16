@@ -30,7 +30,9 @@
 
 const Long64_t nfill1 = 5;
 const Long64_t nfill2 = 4;
+const Long64_t nfill22 = 3;
 const double vinit = 42.3;  // fill each element with a different value starting from here
+const double vinit2 = vinit+7*nfill2;
 const int verbose = 1;
 
 // ==========================================================================================
@@ -48,20 +50,21 @@ const int verbose = 1;
 #define iterTests3 DISABLED_iterTests3
 #endif
 #ifndef DO_ITER
-#define FillIter DISABLED_FillIter
-#define GetIter  DISABLED_GetIter
+#define FillIter  DISABLED_FillIter
+#define GetIter   DISABLED_GetIter
 #endif
 #ifndef DO_ADDR
-#define FillAddr DISABLED_FillAddr
-#define GetAddr  DISABLED_GetAddr
+#define FillAddr  DISABLED_FillAddr
+#define GetAddr   DISABLED_GetAddr
 #endif
 #ifndef DO_FILL
-#define FillIter DISABLED_FillIter
-#define FillAddr DISABLED_FillAddr
+#define FillIter  DISABLED_FillIter
+#define FillIter2 DISABLED_FillIter2
+#define FillAddr  DISABLED_FillAddr
 #endif
 #ifndef DO_GET
-#define GetIter  DISABLED_GetIter
-#define GetAddr  DISABLED_GetAddr
+#define GetIter   DISABLED_GetIter
+#define GetAddr   DISABLED_GetAddr
 #endif
 
 // A simple user-defined POD class
@@ -91,14 +94,14 @@ struct MyStruct3 : public MyStruct, public ShowConstructors<MyStruct3> {
 template<> MyStruct3 TTreeIterator::type_default() { return MyStruct3(-2.0,-2.0,-2.0,-2); }
 
 // ==========================================================================================
-// TestFill/TestScan use TTreeIterator to test writing and reading various types to a TTree.
+// iterTests1 use TTreeIterator to test writing and reading various types to a TTree.
 // ==========================================================================================
 
 TEST(iterTests1, FillIter) {
   TFile f ("iterTests1.root", "recreate");
   if (f.IsZombie()) { Error("iterTests1", "no file"); return; }
 
-  TTreeIterator iter ("test", verbose);
+  TTreeIterator iter ("test", &f, verbose);
   double v = vinit;  // fill each element with a different value starting from here
   double xsum = 0.0;
   int ml = 1;
@@ -184,59 +187,7 @@ TEST(iterTests1, AlgIter) {
 }
 
 // ==========================================================================================
-// TestFill/TestScan use TTreeIterator to test writing and reading some instrumented objects
-// to see construction and destruction
-// ==========================================================================================
-
-TEST(iterTests2, FillIter) {
-  ShowConstructors<MyStruct3>::verbose = verbose;
-  ShowConstructors<TestObj>::verbose = verbose;
-  TFile f ("iterTests2.root", "recreate");
-  ASSERT_FALSE(f.IsZombie()) << "no file";
-
-  TTreeIterator iter ("test", verbose);
-  double v = vinit;
-  for (auto& entry : iter.FillEntries(nfill2)) {
-    Long64_t i=entry.index();
-    entry["a"] = v++;
-    if (i >= 1) entry["s"] = std::string (Form("s:%g",v++));
-    if (i >= 2) entry["M"] = MyStruct3(v++,v++,v++,int(v++));
-    if (i >= 1) { entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++; }
-  }
-}
-
-TEST(iterTests2, GetIter) {
-  ShowConstructors<MyStruct3>::verbose = verbose;
-  ShowConstructors<TestObj>::verbose = verbose;
-  TFile f ("iterTests2.root");
-  if (f.IsZombie()) { Error("TestFill2", "no file"); return; }
-
-  TTreeIterator iter ("test", &f, verbose);
-  ASSERT_TRUE(iter.GetTree()) << "no tree";
-  EXPECT_EQ(iter.GetEntries(), nfill2);
-  double v = vinit;
-  for (auto& entry : iter) {
-    // let's try accessing elements in a different order from creation (but print them in the creation order)
-    std::string s = entry["s"];
-    const TestObj& o = entry["o"];
-    MyStruct3& M = entry["M"];
-    double a = entry["a"];
-    Info("GetIter2","a=%g, s=\"%s\", M=(%g,%g,%g,%d), o=(%g,\"%s\")",a, s.c_str(), M.x[0],M.x[1],M.x[2],M.i, o.value,o.GetName());
-#ifdef FULL_CHECKS
-    Long64_t i=entry.index();
-    EXPECT_EQ (a, v++);
-    if (i >= 1) EXPECT_EQ (s, std::string (Form("s:%g",v++)));
-    else        EXPECT_EQ (s, std::string());
-    if (i >= 2) EXPECT_EQ (M, MyStruct3(v++,v++,v++,int(v++)));
-    else        EXPECT_EQ (M, TTreeIterator::type_default<MyStruct3>());
-    if (i >= 1) { EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v)); v++; }
-    else        { TestObj t; EXPECT_EQ (o.value, t.value); EXPECT_STREQ (o.GetName(), t.GetName()); }
-#endif
-  }
-}
-
-// ==========================================================================================
-// TestFill/TestScan use basic TTree operations to test writing and reading some instrumented objects
+// iterTests2 use basic TTree operations to test writing and reading some instrumented objects
 // to see construction and destruction
 // ==========================================================================================
 
@@ -306,14 +257,85 @@ TEST(iterTests2, GetAddr) {
 }
 
 // ==========================================================================================
-// TestTask uses RooFitTaskTree to test reading from an example TTree
+// iterTests2 use TTreeIterator to test writing and reading some instrumented objects
+// to see construction and destruction
+// ==========================================================================================
+
+TEST(iterTests2, FillIter) {
+  ShowConstructors<MyStruct3>::verbose = verbose;
+  ShowConstructors<TestObj>::verbose = verbose;
+  TFile f ("iterTests2.root", "recreate");
+  ASSERT_FALSE(f.IsZombie()) << "no file";
+
+  TTreeIterator iter ("test", &f, verbose);
+  double v = vinit;
+  for (auto& entry : iter.FillEntries(nfill2)) {
+    Long64_t i=entry.index();
+    entry["a"] = v++;
+    if (i >= 1) entry["s"] = std::string (Form("s:%g",v++));
+    if (i >= 2) entry["M"] = MyStruct3(v++,v++,v++,int(v++));
+    if (i >= 1) { entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++; }
+  }
+}
+
+TEST(iterTests2, FillIter2) {
+  ShowConstructors<MyStruct3>::verbose = verbose;
+  ShowConstructors<TestObj>::verbose = verbose;
+  TFile f ("iterTests2.root", "update");
+  ASSERT_FALSE(f.IsZombie()) << "no file";
+
+  TTreeIterator iter ("test", &f, verbose);
+  double v = vinit2;
+  for (auto& entry : iter.FillEntries(nfill22)) {
+    entry["a"] = v++;
+    entry["s"] = std::string (Form("s:%g",v++));
+    entry["M"] = MyStruct3(v++,v++,v++,int(v++));
+    entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++;
+  }
+}
+
+TEST(iterTests2, GetIter) {
+  ShowConstructors<MyStruct3>::verbose = verbose;
+  ShowConstructors<TestObj>::verbose = verbose;
+  TFile f ("iterTests2.root");
+  if (f.IsZombie()) { Error("TestFill2", "no file"); return; }
+
+  TTreeIterator iter ("test", &f, verbose);
+  ASSERT_TRUE(iter.GetTree()) << "no tree";
+  bool only2 = (iter.GetEntries() == nfill2);
+  if (only2) EXPECT_EQ(iter.GetEntries(), nfill2);
+  else       EXPECT_EQ(iter.GetEntries(), nfill2+nfill22);
+  double v = vinit;
+  for (auto& entry : iter) {
+    Long64_t i=entry.index();
+    // let's try accessing elements in a different order from creation (but print them in the creation order)
+    std::string s = entry["s"];
+    const TestObj& o = entry["o"];
+    MyStruct3& M = entry["M"];
+    double a = entry["a"];
+    Info("GetIter2","Entry %lld: a=%g, s=\"%s\", M=(%g,%g,%g,%d), o=(%g,\"%s\")", i, a, s.c_str(), M.x[0],M.x[1],M.x[2],M.i, o.value,o.GetName());
+#ifdef FULL_CHECKS
+    if (i == nfill2) v = vinit2;
+    EXPECT_EQ (a, v++);
+    if (i >= 1) EXPECT_EQ (s, std::string (Form("s:%g",v++)));
+    else        EXPECT_EQ (s, std::string());
+    if (i >= 2) EXPECT_EQ (M, MyStruct3(v++,v++,v++,int(v++)));
+    else        EXPECT_EQ (M, TTreeIterator::type_default<MyStruct3>());
+    if (i >= 1) { EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v)); v++; }
+    else        { TestObj t; EXPECT_EQ (o.value, t.value); EXPECT_STREQ (o.GetName(), t.GetName()); }
+#endif
+  }
+}
+
+// ==========================================================================================
+// iterTests3 tests reading from an example TTree
 // ==========================================================================================
 
 TEST(iterTests3, GetIter) {
-  TFile f ("scan_result_example.root", "recreate");
+  TFile f ("scan_result_example.root");
   if (f.IsZombie()) { Error("GetIter3", "no file"); return; }
 
-  TTreeIterator iter ("myFits", verbose);
+  TTreeIterator iter ("myFits", &f, verbose);
 
   for (auto& entry : iter) {
     Long64_t i=entry.index();
