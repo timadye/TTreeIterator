@@ -3,23 +3,106 @@
 
 #pragma once
 
+//#define NO_cxxabi_h
+
+#ifdef _MSC_VER
+#define NO_cxxabi_h
+#endif
+
 #include <cstdio>
 #include <memory>
+#include <utility>
 #include <string>
 #include <cstdlib>
-#ifndef _MSC_VER
+#include <typeinfo>
+#include <map>
+#include <vector>
+#include <iterator>
+
+#ifndef NO_cxxabi_h
 #include <cxxabi.h>
 #endif
 
 #include "TNamed.h"
 #include "TString.h"
 
-// type_name<T>() shows type name with reference modifiers
-// https://stackoverflow.com/a/53865723
+
+template<typename Key, typename T>
+class OrderedMap : public std::map< Key, std::pair<size_t,T> > {
+public:
+  using key_type = Key;
+  using mapped_type = T;
+  using value_type = std::pair<const Key, T>;
+  using map_type = std::map< Key, std::pair<size_t,T> >;
+  using vector_type = std::vector<typename map_type::iterator>;
+
+  struct iterator : public vector_type::iterator {
+    iterator() = default;
+    iterator(const typename vector_type::iterator& vi) : vector_type::iterator(vi) {}
+    value_type operator*() const {
+      typename OrderedMap::map_type::iterator mit = vector_type::iterator::operator*();
+      return OrderedMap::value_type (mit->first, mit->second.second);
+    }
+  };
+  struct reverse_iterator : public vector_type::reverse_iterator {
+    reverse_iterator() = default;
+    reverse_iterator(const typename vector_type::reverse_iterator& vi) : vector_type::reverse_iterator(vi) {}
+    const value_type& operator*() const {
+      typename OrderedMap::map_type::iterator mit = vector_type::reverse_iterator::operator*();
+      return OrderedMap::value_type (mit->first, mit->second.second);
+    }
+  };
+  iterator  begin() { return          iterator(_vec. begin()); }
+  iterator  end  () { return          iterator(_vec. end  ()); }
+  iterator rbegin() { return  reverse_iterator(_vec.rbegin()); }
+  iterator rend  () { return  reverse_iterator(_vec.rend  ()); }
+  /*
+  typename vector_type::iterator  begin() { return _vec. begin(); }
+  typename vector_type::iterator  end() { return _vec. end(); }
+  */
+  iterator& next (iterator& it) {  // circular next
+    if (it == end()) return it;
+    it++;
+    if (it == end()) it = begin();
+    return it;
+  }
+
+  mapped_type& operator[] (const key_type& k) {
+    //    return insert (value_type(k, T())).first->second;
+    auto& val = map_type::operator[](k);  // doesn't add to _vec
+    return val.second;
+  }
+
+  mapped_type& at (const key_type& k) {
+    auto& val = map_type::at(k);
+    return val.second;
+  }
+
+  std::pair<iterator, bool> insert (const value_type& val) {
+    auto ret = map_type::insert (typename map_type::value_type (val.first, typename map_type::mapped_type (0, val.second)));
+    if (!ret.second) return std::pair<iterator,bool> (end(), false);
+    auto& mit = ret.first;
+    mit->second.first = _vec.size();
+    _vec.push_back(mit);
+    return std::pair<iterator,bool> (std::next (begin(), mit->second.first), true);
+  }
+
+  iterator find (const key_type& key) {
+    auto mit = map_type::find (key);
+    if (mit == map_type::end()) return end();
+    return std::next (begin(), mit->second.first);
+  }
+
+private:
+  vector_type _vec;
+};
+
+// =====================================================================
+
 inline const char* demangle_name (const char* name, const char* varname=0)
 {
   static std::string r;   // only store one at a time
-#ifndef _MSC_VER
+#ifndef NO_cxxabi_h
   std::unique_ptr<char, void(*)(void*)> own(abi::__cxa_demangle(name, nullptr, nullptr, nullptr), std::free);
   r = own ? own.get() : name;
 #else
@@ -29,6 +112,8 @@ inline const char* demangle_name (const char* name, const char* varname=0)
   return r.c_str();
 }
 
+// type_name<T>() shows type name with reference modifiers
+// https://stackoverflow.com/a/53865723
 template <class T>
 inline const char* type_name (const char* varname=0)
 {
@@ -43,7 +128,7 @@ inline const char* type_name (const char* varname=0)
   return r.c_str();
 }
 
-
+// =====================================================================
 
 // CRTP mix-in to show constructors/destructors/assignment operators.
 // See TestObj below for an example (only public inheritance from ShowConstructors<TestObj> required).
