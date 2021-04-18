@@ -1,8 +1,8 @@
 // Some extra tools for TTreeIterator class and tests
 // Created by Tim Adye on 15/04/2021.
 
-#ifndef TTreeIterator_helpers_h
-#define TTreeIterator_helpers_h
+#ifndef ROOT_TTreeIterator_helpers
+#define ROOT_TTreeIterator_helpers
 
 //#define NO_cxxabi_h
 
@@ -294,4 +294,4 @@ public:
   ClassDefOverride(TestObj,1)
 };
 
-#endif /* TTreeIterator_helpers_h */
+#endif /* ROOT_TTreeIterator_helpers */

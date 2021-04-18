@@ -1,8 +1,8 @@
 // A TTreeIterator allows iterator and member access to the elements of a TTree.
 // Created by Tim Adye on 26/03/2021.
 
-#ifndef TTreeIterator_h
-#define TTreeIterator_h
+#ifndef ROOT_TTreeIterator
+#define ROOT_TTreeIterator
 
 #include <string>
 #include <iterator>
@@ -730,12 +730,6 @@ protected:
   ClassDefOverride(TTreeIterator,0)
 };
 
-template<> inline float         TTreeIterator::type_default() { return std::numeric_limits<float      >::quiet_NaN(); }
-template<> inline double        TTreeIterator::type_default() { return std::numeric_limits<double     >::quiet_NaN(); }
-template<> inline long double   TTreeIterator::type_default() { return std::numeric_limits<long double>::quiet_NaN(); }
-template<> inline char          TTreeIterator::type_default() { return '#'; }
-template<> inline int           TTreeIterator::type_default() { return -1;  }
-template<> inline long int      TTreeIterator::type_default() { return -1;  }
-template<> inline long long int TTreeIterator::type_default() { return -1;  }
+#include "TTreeIterator_detail.h"
 
-#endif /* TTreeIterator_h */
+#endif /* ROOT_TTreeIterator */
