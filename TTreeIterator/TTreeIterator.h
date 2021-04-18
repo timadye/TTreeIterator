@@ -118,6 +118,13 @@ public:
 #endif
          ) branch->ResetAddress();
     }
+    template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
+    template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
+    template <typename T>       T  GetValue()    const { return std::any_cast<T> (value); }
+    template <typename T> const T& GetValueRef() const { return std::any_cast<T&>(value); }
+    template <typename T>       T& GetValueRef()       { return std::any_cast<T&>(value); }
+    template <typename T> const T* GetValuePtr() const { return std::any_cast<T>(&value); }
+    template <typename T>       T* GetValuePtr()       { return std::any_cast<T>(&value); }
   };
 
   // Constructors and destructors

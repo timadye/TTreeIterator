@@ -154,7 +154,7 @@ inline const T& TTreeIterator::Set(const char* name, T&& val, const char* leafli
     return SetValue<T>(ibranch, name, std::forward<T>(val));
   }
   BranchInfo* ibranch = NewBranch<T> (name, std::forward<T>(val), leaflist, bufsize, splitlevel);
-  return std::any_cast<V&>(ibranch->value);
+  return ibranch->GetValueRef<V>();
 }
 
 
@@ -165,7 +165,7 @@ inline const T& TTreeIterator::Get(const char* name, const T& val) const {
 #ifndef OVERRIDE_BRANCH_ADDRESS
       if (!ibranch->puser) {
 #endif
-        T* pvalue = std::any_cast<T>(&ibranch->value);
+        T* pvalue = ibranch->GetValuePtr<T>();
 #ifndef FEWER_CHECKS
         if (ibranch->pvalue && ibranch->pvalue != pvalue) {
           if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' object address changed from our @%p to @%p", name, pvalue, ibranch->pvalue);
@@ -272,7 +272,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
       user = " user";
     } else
 #endif
-      addr = std::any_cast<V>(&ibranch->value);
+      addr = ibranch->GetValuePtr<V>();
     Info (tname<T>("GetBranchInfo"), "found%s%s branch '%s' of type '%s' @%p", (ibranch->set?"":" bad"), user, name, type_name<T>(), addr);
   }
 #endif
@@ -288,14 +288,14 @@ inline const T& TTreeIterator::SetValue (BranchInfo* ibranch, const char* name, 
     if (!ibranch->puser) {
 #endif
 #ifndef FEWER_CHECKS
-      if (ibranch->pvalue && ibranch->pvalue != std::any_cast<V>(&ibranch->value)) {
-        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' object address changed from our @%p to @%p", name, std::any_cast<V>(&ibranch->value));
+      if (ibranch->pvalue && ibranch->pvalue != ibranch->GetValuePtr<V>()) {
+        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' object address changed from our @%p to @%p", name, ibranch->GetValuePtr<V>());
 #ifndef OVERRIDE_BRANCH_ADDRESS
         ibranch->puser = &ibranch->pvalue;
 #endif
       } else
 #endif
-        return ibranch->value.emplace<T>(std::forward<T>(val));
+        return ibranch->SetValue<T>(std::forward<T>(val));
 #ifndef OVERRIDE_BRANCH_ADDRESS
     }
     if (ibranch->isobj) {
@@ -327,13 +327,13 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
     if (fVerbose >= 0) Error (tname<T>("Set"), "no tree available");
     return ibranch;
   }
-  V* pvalue = std::any_cast<V>(&ibranch->value);
+  V* pvalue = ibranch->GetValuePtr<V>();
   if (branch) {
     ibranch->branch = branch;
     if (fVerbose >= 1) Info (tname<T>("Set"), "new branch '%s' of type '%s' already exists @%p", name, type_name<T>(), pvalue);
     SetBranchAddress<V> (ibranch, name, "Set");
 #ifndef OVERRIDE_BRANCH_ADDRESS
-    if (ibranch->puser) SetValue<T> (ibranch, name, std::any_cast<T>(ibranch->value));
+    if (ibranch->puser) SetValue<T> (ibranch, name, std::forward<T>(ibranch->GetValueRef<T>()));
 #endif
   } else if (leaflist && *leaflist) {
     branch = fTree->Branch (name, pvalue, leaflist, bufsize);
@@ -378,16 +378,16 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::SetBranchInfo (const char* name, T&& val) const {
 #ifdef USE_MAP_EMPLACE
-  auto ret = fBranches.emplace (std::make_pair (name, typeid(T).hash_code()), BranchInfo {std::forward<T>(val)});
+  auto ret = fBranches.emplace (std::make_pair                 (name, typeid(T).hash_code()), BranchInfo (std::forward<T>(val)));
 #else
-  auto ret = fBranches.insert  (std::make_pair (std::make_pair (name, typeid(T).hash_code()), BranchInfo {std::forward<T>(val)}));
+  auto ret = fBranches.insert  (std::make_pair (std::make_pair (name, typeid(T).hash_code()), BranchInfo (std::forward<T>(val))));
 #endif
   BranchInfo* ibranch = &ret.first->second;
 #ifndef FEWER_CHECKS
   if (!ret.second) {
     if (fVerbose >= 1) Info ("SetBranchInfo", "somehow we have already saved branch '%s' info", name);
 #ifndef USE_MAP_EMPLACE
-    ibranch->value.emplace<T>(std::forward<T>(val));
+    ibranch->SetValue<T>(std::forward<T>(val));
 #endif
   }
 #endif
@@ -428,7 +428,7 @@ inline bool TTreeIterator::SetBranchAddress (BranchInfo* ibranch, const char* na
     }
   }
 #endif
-  T* pvalue= std::any_cast<T>(&ibranch->value);
+  T* pvalue= ibranch->GetValuePtr<T>();
   if (ibranch->isobj) {
     ibranch->pvalue = pvalue;
     addr = &ibranch->pvalue;
