@@ -35,7 +35,7 @@ const Long64_t nfill2 = 4;
 const Long64_t nfill22 = 3;
 const double vinit = 42.3;  // fill each element with a different value starting from here
 const double vinit2 = vinit+7*nfill2;
-const int verbose = 1;
+const int verbose = 2;
 
 // ==========================================================================================
 // Global definitions
@@ -102,6 +102,10 @@ TEST(mapTests, map1) {
   m.insert({"cd",4.3});
   for (auto it : m) {
     std::cout << it.first << ':' << it.second << ' ';
+  }
+  std::cout << '\n';
+  for (auto it = m.rbegin(); it != m.rend(); ++it) {
+    std::cout << it->first << ':' << it->second << ' ';
   }
   std::cout << '\n';
   std::cout << "m[cd] = " << m["cd"] << '\n';

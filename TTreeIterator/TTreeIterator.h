@@ -7,6 +7,7 @@
 #include <iterator>
 #include <limits>
 #include <utility>
+#include <map>
 #include <any>
 
 #include "TDirectory.h"
@@ -18,9 +19,17 @@
 // define these for fastest speed
 //#define FEWER_CHECKS 1             // skip sanity/debug checks if on every entry
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
+//#define USE_OrderedMap
+#define USE_MAP_EMPLACE
 
 class TTreeIterator : public TNamed {
 public:
+  template <typename K, typename V> using branch_map_type =
+#ifdef USE_OrderedMap
+    OrderedMap<K,V>;
+#else
+    std::map<K,V>;
+#endif
 
   // Interface to std::iterator to allow range-based for loop
   class iterator
@@ -254,8 +263,8 @@ public:
   int      verbose() const { return fVerbose; }
   virtual void reset() {
     fIndex = 0;
-    for (auto& it : fBranches) {
-      BranchInfo& ibranch = it.second;
+    for (auto it = fBranches.rbegin(); it != fBranches.rend(); ++it) {
+      BranchInfo& ibranch = it->second;
       ibranch.ResetAddress();
       ibranch.EnableReset();
     }
@@ -462,17 +471,22 @@ protected:
 
   template <typename T>
   BranchInfo* GetBranchInfo (const char* name) const {
+    using V = typename std::remove_reference<T>::type;
     auto it = fBranches.find({name,typeid(T).hash_code()});
     if (it == fBranches.end()) return nullptr;
     BranchInfo* ibranch = &it->second;
 #ifndef FEWER_CHECKS
     if (fVerbose >= 2) {
+      void* addr;
+      const char* user = "";
 #ifndef OVERRIDE_BRANCH_ADDRESS
-      if (ibranch->puser)
-        Info (tname<T>("GetBranchInfo"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), ibranch->puser);
-      else
+      if (ibranch->puser) {
+        addr = ibranch->puser;
+        user = " user";
+      } else
 #endif
-        Info (tname<T>("GetBranchInfo"), "found branch '%s' of type '%s' @%p", name, type_name<T>(), &ibranch->value);
+        addr = std::any_cast<V>(&ibranch->value);
+      Info (tname<T>("GetBranchInfo"), "found%s%s branch '%s' of type '%s' @%p", (ibranch->set?"":" bad"), user, name, type_name<T>(), addr);
     }
 #endif
     return ibranch;
@@ -553,10 +567,10 @@ protected:
         branch = fTree->Branch (name,    pvalue, bufsize, splitlevel);
       }
       if (!branch) {
-        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' of type '%s'", name, (ibranch->isobj?"object":"variable"), type_name<T>());
+        if (fVerbose >= 0) Error (tname<T>("Set"), "failed to create branch '%s' %s of type '%s'", name, (ibranch->isobj?"object":"variable"), type_name<T>());
         return ibranch;
       }
-      if   (fVerbose >= 1) Info  (tname<T>("Set"), "create branch '%s' of type '%s' @%p",       name, (ibranch->isobj?"object":"variable"), type_name<T>(), addr);
+      if   (fVerbose >= 1) Info  (tname<T>("Set"), "create branch '%s' %s of type '%s' @%p",       name, (ibranch->isobj?"object":"variable"), type_name<T>(), addr);
       ibranch->branch = branch;
       ibranch->set = true;
     }
@@ -573,7 +587,21 @@ protected:
 
   template <typename T>
   BranchInfo* SetBranchInfo (const char* name, T&& val) const {
-    return &(fBranches[{name,typeid(T).hash_code()}] = BranchInfo {std::forward<T>(val)});
+#ifdef USE_MAP_EMPLACE
+    auto ret = fBranches.emplace (std::make_pair (name, typeid(T).hash_code()), BranchInfo {std::forward<T>(val)});
+#else
+    auto ret = fBranches.insert  (std::make_pair (std::make_pair (name, typeid(T).hash_code()), BranchInfo {std::forward<T>(val)}));
+#endif
+    BranchInfo* ibranch = &ret.first->second;
+#ifndef FEWER_CHECKS
+    if (!ret.second) {
+      if (fVerbose >= 1) Info ("SetBranchInfo", "somehow we have already saved branch '%s' info", name);
+#ifndef USE_MAP_EMPLACE
+      ibranch->value.emplace<T>(std::forward<T>(val));
+#endif
+    }
+#endif
+    return ibranch;
   }
 
   template <typename T>
@@ -686,7 +714,7 @@ protected:
 
   // Member variables
   Long64_t fIndex=0;
-  mutable std::map<std::pair<std::string,size_t>,BranchInfo> fBranches;
+  mutable branch_map_type<std::pair<std::string,size_t>,BranchInfo> fBranches;
   TTree* fTree=nullptr;
   bool fTreeOwned=false;
   Int_t fBufsize=32000;
