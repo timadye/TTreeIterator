@@ -1,7 +1,8 @@
 // Some extra tools for TTreeIterator class and tests
 // Created by Tim Adye on 15/04/2021.
 
-#pragma once
+#ifndef TTreeIterator_helpers_h
+#define TTreeIterator_helpers_h
 
 //#define NO_cxxabi_h
 
@@ -292,3 +293,5 @@ public:
   Double_t value=-1.0;
   ClassDefOverride(TestObj,1)
 };
+
+#endif /* TTreeIterator_helpers_h */

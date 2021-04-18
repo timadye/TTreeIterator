@@ -1,7 +1,8 @@
 // A TTreeIterator allows iterator and member access to the elements of a TTree.
 // Created by Tim Adye on 26/03/2021.
 
-#pragma once
+#ifndef TTreeIterator_h
+#define TTreeIterator_h
 
 #include <string>
 #include <iterator>
@@ -14,13 +15,13 @@
 #include "TTree.h"
 #include "TError.h"
 
-#include "TTreeIterator_detail.h"
+#include "TTreeIterator_helpers.h"
 
 // define these for fastest speed
 //#define FEWER_CHECKS 1             // skip sanity/debug checks if on every entry
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define USE_OrderedMap
-#define USE_MAP_EMPLACE
+#define USE_MAP_EMPLACE              // use map::emplace instead of map::insert, which is probably a good idea but probably makes little difference
 
 class TTreeIterator : public TNamed {
 public:
@@ -736,3 +737,5 @@ template<> inline char          TTreeIterator::type_default() { return '#'; }
 template<> inline int           TTreeIterator::type_default() { return -1;  }
 template<> inline long int      TTreeIterator::type_default() { return -1;  }
 template<> inline long long int TTreeIterator::type_default() { return -1;  }
+
+#endif /* TTreeIterator_h */
