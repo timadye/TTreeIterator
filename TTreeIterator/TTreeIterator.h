@@ -7,27 +7,41 @@
 #include <string>
 #include <iterator>
 #include <utility>
-#include <map>
-#include <any>
 
 #include "TTree.h"
-
-#include "TTreeIterator_helpers.h"
 
 class TDirectory;
 
 // define these for fastest speed
 //#define FEWER_CHECKS 1             // skip sanity/debug checks if on every entry
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
-//#define USE_OrderedMap
+//#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
+//#define USE_OrderedMap 1           // instead of std::map, use OrderedMap from TTreeIterator_helpers.h
+#ifdef __cpp_lib_any
+#define USE_STD_ANY 1                // use C++17's std::any, instead of UncheckedAny from TTreeIterator_helpers.h
+#endif
+
+#include "TTreeIterator_helpers.h"
+
+#ifndef USE_OrderedMap
+#include <map>
+#endif
+#ifdef USE_STD_ANY
+#include <any>
+#endif
+
 
 class TTreeIterator : public TNamed {
 public:
-  template <typename K, typename V> using branch_map_type =
 #ifdef USE_OrderedMap
-    OrderedMap<K,V>;
+  template <typename K, typename V> using branch_map_type = OrderedMap<K,V>;
 #else
-    std::map<K,V>;
+  template <typename K, typename V> using branch_map_type = std::map<K,V>;
+#endif
+#ifdef USE_STD_ANY
+  using any_type = std::any;
+#else
+  using any_type = UncheckedAny;
 #endif
 
   // Interface to std::iterator to allow range-based for loop
@@ -97,7 +111,7 @@ public:
 
   // Our local cache of branch information
   struct BranchInfo {
-    std::any value;
+    any_type value;
     void*    pvalue = nullptr;
 #ifndef OVERRIDE_BRANCH_ADDRESS
     void**   puser  = nullptr;
@@ -120,11 +134,11 @@ public:
     }
     template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
     template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
-    template <typename T>       T  GetValue()    const { return std::any_cast<T> (value); }
-    template <typename T> const T& GetValueRef() const { return std::any_cast<T&>(value); }
-    template <typename T>       T& GetValueRef()       { return std::any_cast<T&>(value); }
-    template <typename T> const T* GetValuePtr() const { return std::any_cast<T>(&value); }
-    template <typename T>       T* GetValuePtr()       { return std::any_cast<T>(&value); }
+    template <typename T>       T  GetValue()    const { return any_type::any_cast<T> (value); }
+    template <typename T> const T& GetValueRef() const { return any_type::any_cast<T&>(value); }
+    template <typename T>       T& GetValueRef()       { return any_type::any_cast<T&>(value); }
+    template <typename T> const T* GetValuePtr() const { return any_type::any_cast<T>(&value); }
+    template <typename T>       T* GetValuePtr()       { return any_type::any_cast<T>(&value); }
   };
 
   // Constructors and destructors
@@ -176,10 +190,8 @@ public:
   Long64_t GetEntries () const { return fTree ? fTree->GetEntries() : 0; }
   void  SetBufsize    (Int_t bufsize)     { fBufsize    = bufsize;         }
   void  SetSplitlevel (Int_t splitlevel)  { fSplitlevel = splitlevel;      }
-  void  SetPreferPP   (bool preferPP)     { fPreferPP   = preferPP;        }
   Int_t GetBufsize()    const             { return       fBufsize;         }
   Int_t GetSplitlevel() const             { return       fSplitlevel;      }
-  bool  GetPreferPP() const               { return       fPreferPP;        }
 #ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
   void  SetOverrideBranchAddress (bool o) { fOverrideBranchAddress = o;    }
   bool  GetOverrideBranchAddress() const  { return fOverrideBranchAddress; }
@@ -297,7 +309,6 @@ protected:
   Int_t fSplitlevel=99;
   int fVerbose=0;
   bool fWriting=false;
-  bool fPreferPP=true;   // for ROOT objects, tree->Branch() gives **obj, rather than *obj
 #ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
   bool fOverrideBranchAddress=false;
 #endif

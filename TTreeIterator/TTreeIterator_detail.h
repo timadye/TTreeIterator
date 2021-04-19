@@ -346,12 +346,15 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
     ibranch->set = true;
   } else {
     void* addr;
-    if (fPreferPP && TClass::GetClass<V>()) {  // shouldn't have to use **T for objects, but maybe it's more reliable?
+#ifdef PREFER_PTRPTR
+    if (TClass::GetClass<V>()) {  // shouldn't have to use **T for objects, but maybe it's more reliable?
       ibranch->isobj = true;
       ibranch->pvalue = pvalue;
       addr = &ibranch->pvalue;
       branch = fTree->Branch (name, (V**)addr, bufsize, splitlevel);
-    } else {
+    } else
+#endif
+    {
       addr = pvalue;
       branch = fTree->Branch (name,    pvalue, bufsize, splitlevel);
     }

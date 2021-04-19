@@ -95,6 +95,7 @@ struct MyStruct3 : public MyStruct, public ShowConstructors<MyStruct3> {
 };
 template<> MyStruct3 TTreeIterator::type_default() { return MyStruct3(-2.0,-2.0,-2.0,-2); }
 
+#ifdef USE_OrderedMap
 TEST(mapTests, map1) {
   OrderedMap<std::string,double> m;
   m.insert({"xy",2.1});
@@ -111,6 +112,9 @@ TEST(mapTests, map1) {
   std::cout << "m[cd] = " << m["cd"] << '\n';
   std::cout << "m[ef] = " << m["ef"] << '\n';
 }
+#else
+#define mapTests DISABLED_mapTests
+#endif
 
 TEST(mapTests, map2) {
   std::map<std::string,double> m;
@@ -124,6 +128,7 @@ TEST(mapTests, map2) {
   std::cout << "m[cd] = " << m["cd"] << '\n';
   std::cout << "m[ef] = " << m["ef"] << '\n';
 }
+
 
 // ==========================================================================================
 // iterTests1 use TTreeIterator to test writing and reading various types to a TTree.
