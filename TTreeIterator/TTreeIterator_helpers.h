@@ -66,6 +66,12 @@ namespace _static_assert_detail
 //
 // An UncheckedAny object's state is either empty or it stores a contained object of CopyConstructible type.
 
+#ifdef __cpp_if_constexpr
+#define _constexpr_if constexpr
+#else
+#define _constexpr_if
+#endif
+
 class UncheckedAny
 {
   // Some internal stuff from GCC's std namespace...
@@ -83,11 +89,18 @@ class UncheckedAny
   // remove_cvref_t (std::remove_cvref_t for C++11).
   template<typename T> using remove_cvref_t = typename std::remove_cv<typename std::remove_reference<T>::type>::type;
 
-#ifdef cpp_lib_any
-  template<typename> struct is_in_place_type_impl : std::false_type {};
-  template<typename T> struct is_in_place_type_impl<std::in_place_type_t<T>> : std::true_type {};
-  template<typename T> struct is_in_place_type : public is_in_place_type_impl<T> {};
+  template<typename T> struct in_place_type_t { explicit in_place_type_t() = default; };
+#ifdef __cpp_variable_templates   // for C++11, use in_place_type_t<T>{} instead of in_place_type<T>
+  template<typename T> static constexpr in_place_type_t<T> in_place_type{};
 #endif
+  template<typename> struct is_in_place_type_impl : std::false_type {};
+  template<typename T> struct is_in_place_type_impl<in_place_type_t<T>> : std::true_type {};
+  template<typename T> struct is_in_place_type : public is_in_place_type_impl<T> {};
+
+  // Exception class thrown by a failed any_cast
+  struct bad_any_cast : public std::bad_cast {
+    virtual const char* what() const noexcept { return "bad any_cast"; }
+  };
 
   // Holds either pointer to a heap object or the contained object itself.
   union Storage {
@@ -173,28 +186,22 @@ public:
   // Construct with a copy of value as the contained object.
   template <typename T, typename V = Decay_if_not_any<T>,
             typename Mgr = Manager<V>,
-            typename std::enable_if<std::is_copy_constructible<V>::value
-#ifdef cpp_lib_any
-                                    && !is_in_place_type<V>::value
-#endif
-                                    , bool>::type = true>
+            typename std::enable_if<std::is_copy_constructible<V>::value && !is_in_place_type<V>::value, bool>::type = true>
   UncheckedAny(T&& value) : _manager(&Mgr::manage) {
     Mgr::create(_storage, std::forward<T>(value));
   }
 
-#ifdef cpp_lib_any
   // Construct with an object created from args as the contained object.
   template <typename T, typename... Args, typename V = typename std::decay<T>::type, typename Mgr = Manager<V>, any_constructible_t<V, Args&&...> = false>
-  explicit UncheckedAny(std::in_place_type_t<T>, Args&&... args) : _manager(&Mgr::manage) {
+  explicit UncheckedAny(in_place_type_t<T>, Args&&... args) : _manager(&Mgr::manage) {
     Mgr::create(_storage, std::forward<Args>(args)...);
   }
 
   // Construct with an object created from il and args as the contained object.
   template <typename T, typename Up, typename... Args, typename V = typename std::decay<T>::type, typename Mgr = Manager<V>, any_constructible_t<V, std::initializer_list<Up>, Args&&...> = false>
-  explicit UncheckedAny(std::in_place_type_t<T>, std::initializer_list<Up> il, Args&&... args) : _manager(&Mgr::manage) {
+  explicit UncheckedAny(in_place_type_t<T>, std::initializer_list<Up> il, Args&&... args) : _manager(&Mgr::manage) {
     Mgr::create(_storage, il, std::forward<Args>(args)...);
   }
-#endif
 
   // Destructor, calls reset()
   ~UncheckedAny() { reset(); }
@@ -285,6 +292,14 @@ public:
   // Reports whether there is a contained object or not.
   bool has_value() const noexcept { return _manager != nullptr; }
 
+  // The typeid of the contained object, or typeid(void) if empty.
+  const std::type_info& type() const noexcept {
+    if (!has_value()) return typeid(void);
+    Arg arg;
+    _manager(Op_get_type_info, this, &arg);
+    return *arg._typeinfo;
+  }
+
   template<typename T> static constexpr bool is_valid_cast() { return or_<std::is_reference<T>, std::is_copy_constructible<T>>::value; }
 
 private:
@@ -292,6 +307,7 @@ private:
 
   union Arg {
     void* _obj;
+    const std::type_info* _typeinfo;
     UncheckedAny* _any;
   };
 
@@ -339,8 +355,10 @@ public:
   template <typename T, typename... Args>
   static UncheckedAny make_any(Args&&... args) {
     return UncheckedAny(
-#ifdef cpp_lib_any
-                        std::in_place_type<T>,
+#ifdef __cpp_variable_templates
+                        in_place_type<T>,
+#else
+                        in_place_type_t<T>{},
 #endif
                         std::forward<Args>(args)...);
   }
@@ -349,8 +367,10 @@ public:
   template <typename T, typename Up, typename... Args>
   static UncheckedAny make_any(std::initializer_list<Up> il, Args&&... args) {
     return UncheckedAny(
-#ifdef cpp_lib_any
-                        std::in_place_type<T>,
+#ifdef __cpp_variable_templates
+                        in_place_type<T>,
+#else
+                        in_place_type_t<T>{},
 #endif
                         il, std::forward<Args>(args)...);
   }
@@ -362,14 +382,11 @@ public:
   template<typename ValueType>
   static ValueType any_cast(const UncheckedAny& any) {
     using Up = remove_cvref_t<ValueType>;
-    static_assert(UncheckedAny::is_valid_cast<ValueType>(),
-                  "Template argument must be a reference or CopyConstructible type");
-    static_assert(std::is_constructible<ValueType, const Up&>::value,
-                  "Template argument must be constructible from a const value.");
+    static_assert(UncheckedAny::is_valid_cast<ValueType>(),           "Template argument must be a reference or CopyConstructible type");
+    static_assert(std::is_constructible<ValueType, const Up&>::value, "Template argument must be constructible from a const value.");
     auto p = any_cast<Up>(&any);
     if (p) return static_cast<ValueType>(*p);
-    static Up bad;
-    return bad;
+    throw bad_any_cast();
   }
 
   // Access the contained object.
@@ -379,46 +396,37 @@ public:
   template<typename ValueType>
   static ValueType any_cast(UncheckedAny& any) {
     using Up = remove_cvref_t<ValueType>;
-    static_assert(UncheckedAny::is_valid_cast<ValueType>(),
-                  "Template argument must be a reference or CopyConstructible type");
-    static_assert(std::is_constructible<ValueType, Up&>::value,
-                  "Template argument must be constructible from an lvalue.");
+    static_assert(UncheckedAny::is_valid_cast<ValueType>(),     "Template argument must be a reference or CopyConstructible type");
+    static_assert(std::is_constructible<ValueType, Up&>::value, "Template argument must be constructible from an lvalue.");
     auto p = any_cast<Up>(&any);
     if (p) return static_cast<ValueType>(*p);
-    static Up bad;
-    return bad;
+    throw bad_any_cast();
   }
 
   template<typename ValueType>
   static ValueType any_cast(UncheckedAny&& any) {
     using Up = remove_cvref_t<ValueType>;
-    static_assert(UncheckedAny::is_valid_cast<ValueType>(),
-                  "Template argument must be a reference or CopyConstructible type");
-    static_assert(std::is_constructible<ValueType, Up>::value,
-                  "Template argument must be constructible from an rvalue.");
+    static_assert(UncheckedAny::is_valid_cast<ValueType>(),    "Template argument must be a reference or CopyConstructible type");
+    static_assert(std::is_constructible<ValueType, Up>::value, "Template argument must be constructible from an rvalue.");
     auto p = any_cast<Up>(&any);
     if (p) return static_cast<ValueType>(std::move(*p));
-    static Up bad;
-    return bad;
+    throw bad_any_cast();
   }
 
   template<typename T>
   static void* any_caster(const UncheckedAny* any) {
     // any_cast<T> returns non-null if any->type() == typeid(T) and typeid(T) ignores cv-qualifiers so remove them:
     using Up = typename std::remove_cv<T>::type;
-#ifdef cpp_if_constexpr
     // The contained value has a decayed type, so if std::decay<U>::type is not U, then it's not possible to have a contained value of type U:
-    if constexpr (!std::is_same<typename std::decay<Up>::type, Up>::value) return nullptr;
+    if _constexpr_if (!std::is_same<typename std::decay<Up>::type, Up>::value) return nullptr;
     // Only copy constructible types can be used for contained values:
-    else if constexpr (!std::is_copy_constructible<Up>::value) return nullptr;
+    else if _constexpr_if (!std::is_copy_constructible<Up>::value) return nullptr;
     // First try comparing function addresses, which works without RTTI
-    else
-#endif
-      if (any->_manager == &UncheckedAny::Manager<Up>::manage) {
-        UncheckedAny::Arg arg;
-        any->_manager(UncheckedAny::Op_access, any, &arg);
-        return arg._obj;
-      }
+    else if (any->_manager == &UncheckedAny::Manager<Up>::manage || any->type() == typeid(T)) {
+      UncheckedAny::Arg arg;
+      any->_manager(UncheckedAny::Op_access, any, &arg);
+      return arg._obj;
+    }
     return nullptr;
   }
 
@@ -430,18 +438,14 @@ public:
   //              otherwise a null pointer.
   template<typename ValueType>
   static const ValueType* any_cast(const UncheckedAny* any) noexcept {
-#ifdef cpp_if_constexpr
-    if constexpr (std::is_object<ValueType>::value)
-#endif
+    if _constexpr_if (std::is_object<ValueType>::value)
       if (any) return static_cast<ValueType*>(any_caster<ValueType>(any));
     return nullptr;
   }
 
   template<typename ValueType>
   static ValueType* any_cast(UncheckedAny* any) noexcept {
-#ifdef cpp_if_constexpr
-    if constexpr (std::is_object<ValueType>::value)
-#endif
+    if _constexpr_if (std::is_object<ValueType>::value)
       if (any) return static_cast<ValueType*>(any_caster<ValueType>(any));
     return nullptr;
   }
@@ -456,6 +460,7 @@ void UncheckedAny::Manager_internal<T>::manage(Op which, const UncheckedAny* any
       arg->_obj = const_cast<T*>(ptr);
       break;
     case Op_get_type_info:
+      arg->_typeinfo = &typeid(T);
       break;
     case Op_clone:
       ::new(&arg->_any->_storage._buffer) T(*ptr);
@@ -482,6 +487,7 @@ void UncheckedAny::Manager_external<T>::manage(Op which, const UncheckedAny* any
       arg->_obj = const_cast<T*>(ptr);
       break;
     case Op_get_type_info:
+      arg->_typeinfo = &typeid(T);
       break;
     case Op_clone:
       arg->_any->_storage._ptr = new T(*ptr);
