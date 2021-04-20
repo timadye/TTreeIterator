@@ -259,7 +259,7 @@ public:
   // Get value, returning a reference
   template <typename T>
   T& Get(const char* name) const {
-    static T def {type_default<T>()};   // static default value for each type to allow us to return by reference (NB. sticks around until program exit)
+    static T def = type_default<T>();   // static default value for each type to allow us to return by reference (NB. sticks around until program exit)
     return Get<T>(name, def);
   }
 
@@ -315,6 +315,14 @@ protected:
 
   ClassDefOverride(TTreeIterator,0)
 };
+
+template<> inline float         TTreeIterator::type_default() { return std::numeric_limits<float      >::quiet_NaN(); }
+template<> inline double        TTreeIterator::type_default() { return std::numeric_limits<double     >::quiet_NaN(); }
+template<> inline long double   TTreeIterator::type_default() { return std::numeric_limits<long double>::quiet_NaN(); }
+template<> inline char          TTreeIterator::type_default() { return '#'; }
+template<> inline int           TTreeIterator::type_default() { return -1;  }
+template<> inline long int      TTreeIterator::type_default() { return -1;  }
+template<> inline long long int TTreeIterator::type_default() { return -1;  }
 
 #include "TTreeIterator_detail.h"
 

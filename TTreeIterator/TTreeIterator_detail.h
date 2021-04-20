@@ -10,14 +10,6 @@
 
 #define USE_MAP_EMPLACE  // use map::emplace instead of map::insert, which is probably a good idea but probably makes little difference
 
-template<> inline float         TTreeIterator::type_default() { return std::numeric_limits<float      >::quiet_NaN(); }
-template<> inline double        TTreeIterator::type_default() { return std::numeric_limits<double     >::quiet_NaN(); }
-template<> inline long double   TTreeIterator::type_default() { return std::numeric_limits<long double>::quiet_NaN(); }
-template<> inline char          TTreeIterator::type_default() { return '#'; }
-template<> inline int           TTreeIterator::type_default() { return -1;  }
-template<> inline long int      TTreeIterator::type_default() { return -1;  }
-template<> inline long long int TTreeIterator::type_default() { return -1;  }
-
 
 inline std::string TTreeIterator::BranchNamesString (bool include_children/*=true*/, bool include_inactive/*=false*/) {
   std::string str;

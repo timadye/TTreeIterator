@@ -799,7 +799,7 @@ inline const char* demangle_name (const char* name, const char* varname=0)
 template <class T>
 inline const char* type_name (const char* varname=0)
 {
-  static std::string r;   // only store one at a time
+  static std::string r;   // keeps one string per type (T) until exit
   typedef typename std::remove_reference<T>::type TR;
   r = demangle_name (typeid(TR).name());
   if      (std::is_const           <TR>::value) r += " const";
@@ -817,7 +817,7 @@ inline const char* type_name (const char* varname=0)
 template <class T>
 struct ShowConstructors {
   struct quiet {};
-  ShowConstructors()                                     { Print ("%1$s() @%3$p\n",this);           }
+  ShowConstructors()                                     { Print ("%1$s() [%2$s] @%3$p\n",this);    }
   void init() const                                      { Print ("%1$s(%2$s) @%3$p\n",this);       }
   ShowConstructors(const ShowConstructors& o)            { Print ("%1$s(%1$s(%2$s)) @%3$p\n",&o);   }
   ShowConstructors(      ShowConstructors&&o)            { Print ("%1$s(%1$s&&(%2$s)) @%3$p\n",&o); }

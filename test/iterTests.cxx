@@ -105,9 +105,11 @@ TEST(mapTests, map1) {
     std::cout << it.first << ':' << it.second << ' ';
   }
   std::cout << '\n';
+#ifdef __cpp_lib_make_reverse_iterator
   for (auto it = m.rbegin(); it != m.rend(); ++it) {
     std::cout << it->first << ':' << it->second << ' ';
   }
+#endif
   std::cout << '\n';
   std::cout << "m[cd] = " << m["cd"] << '\n';
   std::cout << "m[ef] = " << m["ef"] << '\n';
