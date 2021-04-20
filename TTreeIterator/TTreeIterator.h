@@ -19,7 +19,7 @@ class TDirectory;
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
 //#define USE_OrderedMap 1           // instead of std::map, use OrderedMap from TTreeIterator_helpers.h
 #ifdef __cpp_lib_any
-#define USE_STD_ANY 1                // use C++17's std::any, instead of UncheckedAny from TTreeIterator_helpers.h
+#define USE_STD_ANY 1                // use C++17's std::any, instead of Cpp11::Any from TTreeIterator_helpers.h
 #endif
 
 #include "TTreeIterator_helpers.h"
@@ -43,7 +43,7 @@ public:
 #ifdef USE_STD_ANY
   using any_type = std::any;
 #else
-  using any_type = UncheckedAny;
+  using any_type = Cpp11::Any;
 #endif
 
   // Interface to std::iterator to allow range-based for loop
