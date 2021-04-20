@@ -186,7 +186,7 @@ inline const T& TTreeIterator::Set(const char* name, T&& val, const char* leafli
     return SetValue<T>(ibranch, name, std::forward<T>(val));
   }
   BranchInfo* ibranch = NewBranch<T> (name, std::forward<T>(val), leaflist, bufsize, splitlevel);
-  return ibranch->GetValueRef<V>();
+  return ibranch->GetValue<V>();
 }
 
 
@@ -347,7 +347,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
     if (fVerbose >= 1) Info (tname<T>("Set"), "new branch '%s' of type '%s' already exists @%p", name, type_name<T>(), pvalue);
     SetBranchAddress<V> (ibranch, name, "Set");
 #ifndef OVERRIDE_BRANCH_ADDRESS
-    if (ibranch->puser) SetValue<T> (ibranch, name, std::forward<T>(ibranch->GetValueRef<T>()));
+    if (ibranch->puser) SetValue<T> (ibranch, name, std::forward<T>(ibranch->GetValue<T>()));
 #endif
   } else if (leaflist && *leaflist) {
     branch = fTree->Branch (name, pvalue, leaflist, bufsize);

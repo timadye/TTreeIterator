@@ -136,9 +136,8 @@ public:
     }
     template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
     template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
-    template <typename T>       T  GetValue()    const { return any_type::any_cast<T> (value); }
-    template <typename T> const T& GetValueRef() const { return any_type::any_cast<T&>(value); }
-    template <typename T>       T& GetValueRef()       { return any_type::any_cast<T&>(value); }
+    template <typename T> const T& GetValue()    const { return any_type::any_cast<T&>(value); }
+    template <typename T>       T& GetValue()          { return any_type::any_cast<T&>(value); }
     template <typename T> const T* GetValuePtr() const { return any_type::any_cast<T>(&value); }
     template <typename T>       T* GetValuePtr()       { return any_type::any_cast<T>(&value); }
   };
