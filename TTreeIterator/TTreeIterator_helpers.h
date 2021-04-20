@@ -61,7 +61,8 @@ namespace _static_assert_detail
 /**
  *  @brief A type-safe container of any type.
  *
- *  Based on GCC 10.2.0's std::any implementation.
+ *  Based on GCC 10.2.0's std::any implementation, last updated 2020-04-23:
+ *    https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=d1462b0782555354b4480e1f46498586d5882972
  *
  *  An @c any object's state is either empty or it stores a contained object
  *  of CopyConstructible type.

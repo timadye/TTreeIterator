@@ -5,6 +5,7 @@
 #define ROOT_TTreeIterator
 
 #include <string>
+#include <vector>
 #include <iterator>
 #include <utility>
 
@@ -32,6 +33,7 @@ class TDirectory;
 
 
 class TTreeIterator : public TNamed {
+
 public:
 #ifdef USE_OrderedMap
   template <typename K, typename V> using branch_map_type = OrderedMap<K,V>;
@@ -167,13 +169,7 @@ public:
   // Access to underlying tree
   TTree* operator->() const { return GetTree(); }
   TTree* GetTree() const { return fTree; }
-  TTree* SetTree (TTree* tree) {
-    reset();
-    if (fTreeOwned) delete fTree;
-    fTree = tree;
-    fTreeOwned = false;
-    return fTree;
-  }
+  TTree* SetTree (TTree* tree);
 
   // Forwards to TTree
   TTreeIterator& GetEntry (Long64_t entry) {
@@ -207,6 +203,9 @@ public:
   virtual TTreeIterator& GetEntry();
   virtual Int_t Fill();
   Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0) override;
+
+  // use a TChain
+  Int_t Add (const char* name, Long64_t nentries=TTree::kMaxEntries);
 
   // Accessors
   TTreeIterator& setIndex   (Long64_t index) { fIndex   = index;   return *this; }

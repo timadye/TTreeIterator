@@ -6,26 +6,60 @@
 
 #include <limits>
 #include "TError.h"
-#include "TDirectory.h"
+#include "TFile.h"
+#include "TChain.h"
 
 #define USE_MAP_EMPLACE  // use map::emplace instead of map::insert, which is probably a good idea but probably makes little difference
 
 
-inline std::string TTreeIterator::BranchNamesString (bool include_children/*=true*/, bool include_inactive/*=false*/) {
-  std::string str;
-  auto allbranches = BranchNames (include_children, include_inactive);
-  for (auto& name : allbranches) {
-    if (!str.empty()) str += ", ";
-    str += name;
+inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */) {
+  if (!dir) dir = gDirectory;
+  if ( dir) dir->GetObject(GetName(), fTree);
+  if (!fTree) {
+    if (dir && !dir->IsWritable()) {
+      Error ("TTreeIterator", "TTree '%s' not found in file %s.", GetName(), dir->GetName());
+      return;
+    }
+    fTree = new TTree(GetName(),"",99,dir);
+  } else {
+    SetTitle(fTree->GetTitle());
+    fIndex = fTree->GetEntries();
+    SetBranchStatusAll(false);
   }
-  return str;
+  fTreeOwned = true;
 }
 
 
-inline std::vector<std::string> TTreeIterator::BranchNames (bool include_children/*=false*/, bool include_inactive/*=false*/) {
-  std::vector<std::string> allbranches;
-  BranchNames (allbranches, fTree->GetListOfBranches(), include_children, include_inactive);
-  return allbranches;
+TTree* TTreeIterator::SetTree (TTree* tree) {
+  reset();
+  if (fTreeOwned) delete fTree;
+  fTree = tree;
+  fTreeOwned = false;
+  return fTree;
+}
+
+
+// use a TChain
+Int_t TTreeIterator::Add (const char* name, Long64_t nentries/*=TTree::kMaxEntries*/) {
+  auto chain = dynamic_cast<TChain*>(fTree);
+  if (!chain) {
+    reset();
+    chain = new TChain (GetName(), GetTitle());
+    if (fTree && fTree->GetEntriesFast()) {
+      Write();   // only writes if there's something to write and somewhere to write it to
+      if (fTree->GetCurrentFile())
+        chain->Add (fTree->GetCurrentFile()->GetName());
+      else
+        Warning ("Add", "cannot include %lld entries from in-memory TTree '%s' in new TChain of same name - existing in-memory TTree will be dropped",
+                 fTree->GetEntriesFast(), GetName());
+    }
+    if (fTreeOwned) delete fTree;
+    fTree = chain;
+    fTreeOwned = true;
+  }
+  Int_t nfiles = chain->Add (name, nentries);
+  if (nfiles > 0 && fVerbose >= 1) Info ("Add", "added %d files to chain '%s': %s", nfiles, chain->GetName(), name);
+  return nfiles;
 }
 
 
@@ -78,9 +112,11 @@ inline /*virtual*/ Int_t TTreeIterator::Fill() {
 
 
 inline Int_t TTreeIterator::Write (const char* name/*=0*/, Int_t option/*=0*/, Int_t bufsize/*=0*/) /*override*/ {
-  if (!(fWriting && fTree && fTree->GetDirectory())) return 0;
-  Int_t nbytes = fTree->Write (name, option, bufsize);
-  if (fVerbose >= 1) Info ("Write", "wrote %d bytes to file %s", nbytes, fTree->GetDirectory()->GetName());
+  Int_t nbytes = 0;
+  if (fWriting && fTree && fTree->GetDirectory() && fTree->GetDirectory()->IsWritable()) {
+    nbytes = fTree->Write (name, option, bufsize);
+    if (fVerbose >= 1) Info ("Write", "wrote %d bytes to file %s", nbytes, fTree->GetDirectory()->GetName());
+  }
   fWriting = false;
   return nbytes;
 }
@@ -202,24 +238,6 @@ inline /*static*/ const char* TTreeIterator::tname(const char* name/*=0*/) {
   ret += cname;
   ret += ">";
   return ret.c_str();
-}
-
-
-inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */) {
-  if (!dir) dir = gDirectory;
-  if ( dir) dir->GetObject(GetName(), fTree);
-  if (!fTree) {
-    if (dir && !dir->IsWritable()) {
-      Error ("TTreeIterator", "TTree '%s' not found in file %s.", GetName(), dir->GetName());
-      return;
-    }
-    fTree = new TTree(GetName(),"",99,dir);
-  } else {
-    SetTitle(fTree->GetTitle());
-    fIndex = fTree->GetEntries();
-    SetBranchStatusAll(false);
-  }
-  fTreeOwned = true;
 }
 
 
@@ -488,6 +506,24 @@ inline /*static*/ void TTreeIterator::SetBranchStatus (TBranch* branch, bool sta
   } else {
     SetBranchStatus (branch->GetListOfBranches(), status, include_children, verbose);
   }
+}
+
+
+inline std::string TTreeIterator::BranchNamesString (bool include_children/*=true*/, bool include_inactive/*=false*/) {
+  std::string str;
+  auto allbranches = BranchNames (include_children, include_inactive);
+  for (auto& name : allbranches) {
+    if (!str.empty()) str += ", ";
+    str += name;
+  }
+  return str;
+}
+
+
+inline std::vector<std::string> TTreeIterator::BranchNames (bool include_children/*=false*/, bool include_inactive/*=false*/) {
+  std::vector<std::string> allbranches;
+  BranchNames (allbranches, fTree->GetListOfBranches(), include_children, include_inactive);
+  return allbranches;
 }
 
 
