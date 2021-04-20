@@ -30,7 +30,7 @@ inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */) {
 }
 
 
-TTree* TTreeIterator::SetTree (TTree* tree) {
+inline TTree* TTreeIterator::SetTree (TTree* tree) {
   reset();
   if (fTreeOwned) delete fTree;
   fTree = tree;
@@ -40,7 +40,7 @@ TTree* TTreeIterator::SetTree (TTree* tree) {
 
 
 // use a TChain
-Int_t TTreeIterator::Add (const char* name, Long64_t nentries/*=TTree::kMaxEntries*/) {
+inline Int_t TTreeIterator::Add (const char* name, Long64_t nentries/*=TTree::kMaxEntries*/) {
   auto chain = dynamic_cast<TChain*>(fTree);
   if (!chain) {
     reset();
