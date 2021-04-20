@@ -58,556 +58,449 @@ namespace _static_assert_detail
 #include <utility>
 #include <type_traits>
 
-/**
- *  @brief A type-safe container of any type.
- *
- *  Based on GCC 10.2.0's std::any implementation, last updated 2020-04-23:
- *    https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=d1462b0782555354b4480e1f46498586d5882972
- *
- *  An @c any object's state is either empty or it stores a contained object
- *  of CopyConstructible type.
- */
+// A type-safe container of any type.
+//
+// Based on GCC 10.2.0's std::any implementation, last updated 2020-04-23:
+//   https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=d1462b0782555354b4480e1f46498586d5882972
+// The code has been extensively de-dOxygenified, and de-STLified to make it easier to read (for me at least).
+//
+// An UncheckedAny object's state is either empty or it stores a contained object of CopyConstructible type.
+
 class UncheckedAny
 {
   // Some internal stuff from GCC's std namespace...
-  // See specialisations of __or_ and __and_ at end of class
-  template<typename...> struct __or_;
-  template<typename _B1> struct __or_<_B1> : public _B1 {};
-  template<typename _B1, typename _B2> struct __or_<_B1, _B2> : public std::conditional<_B1::value, _B1, _B2>::type {};
-  template<typename _B1, typename _B2, typename _B3, typename... _Bn> struct __or_<_B1, _B2, _B3, _Bn...>
-    : public std::conditional<_B1::value, _B1, __or_<_B2, _B3, _Bn...>>::type {};
-  template<typename...> struct __and_;
-  template<typename _B1> struct __and_<_B1> : public _B1 {};
-  template<typename _B1, typename _B2> struct __and_<_B1, _B2> : public std::conditional<_B1::value, _B2, _B1>::type {};
-  template<typename _B1, typename _B2, typename _B3, typename... _Bn> struct __and_<_B1, _B2, _B3, _Bn...>
-    : public std::conditional<_B1::value, __and_<_B2, _B3, _Bn...>, _B1>::type {};
-  // __remove_cvref_t (std::remove_cvref_t for C++11).
-  template<typename _Tp> using __remove_cvref_t = typename std::remove_cv<typename std::remove_reference<_Tp>::type>::type;
+  // See specialisations of or_ and and_ at end of class
+  template<typename...> struct or_;
+  template<typename _B1> struct or_<_B1> : public _B1 {};
+  template<typename _B1, typename _B2> struct or_<_B1, _B2> : public std::conditional<_B1::value, _B1, _B2>::type {};
+  template<typename _B1, typename _B2, typename _B3, typename... _Bn> struct or_<_B1, _B2, _B3, _Bn...>
+    : public std::conditional<_B1::value, _B1, or_<_B2, _B3, _Bn...>>::type {};
+  template<typename...> struct and_;
+  template<typename _B1> struct and_<_B1> : public _B1 {};
+  template<typename _B1, typename _B2> struct and_<_B1, _B2> : public std::conditional<_B1::value, _B2, _B1>::type {};
+  template<typename _B1, typename _B2, typename _B3, typename... _Bn> struct and_<_B1, _B2, _B3, _Bn...>
+    : public std::conditional<_B1::value, and_<_B2, _B3, _Bn...>, _B1>::type {};
+  // remove_cvref_t (std::remove_cvref_t for C++11).
+  template<typename T> using remove_cvref_t = typename std::remove_cv<typename std::remove_reference<T>::type>::type;
 
-#ifdef __cpp_lib_any
-  template<typename> struct __is_in_place_type_impl : std::false_type {};
-  template<typename _Tp> struct __is_in_place_type_impl<std::in_place_type_t<_Tp>> : std::true_type {};
-  template<typename _Tp> struct __is_in_place_type : public __is_in_place_type_impl<_Tp> {};
+#ifdef cpp_lib_any
+  template<typename> struct is_in_place_type_impl : std::false_type {};
+  template<typename T> struct is_in_place_type_impl<std::in_place_type_t<T>> : std::true_type {};
+  template<typename T> struct is_in_place_type : public is_in_place_type_impl<T> {};
 #endif
 
   // Holds either pointer to a heap object or the contained object itself.
-  union _Storage
-  {
-    constexpr _Storage() : _M_ptr{nullptr} {}
+  union Storage {
+    constexpr Storage() : _ptr{nullptr} {}
 
     // Prevent trivial copies of this type, buffer might hold a non-POD.
-    _Storage(const _Storage&) = delete;
-    _Storage& operator=(const _Storage&) = delete;
+    Storage(const Storage&) = delete;
+    Storage& operator=(const Storage&) = delete;
 
-    void* _M_ptr;
-    std::aligned_storage<sizeof(_M_ptr), alignof(void*)>::type _M_buffer;
+    void* _ptr;
+    std::aligned_storage<sizeof(_ptr), alignof(void*)>::type _buffer;
   };
 
-  template<typename _Tp, typename _Safe = std::is_nothrow_move_constructible<_Tp>,
-           bool _Fits = (sizeof(_Tp) <= sizeof(_Storage))
-           && (alignof(_Tp) <= alignof(_Storage))>
-  using _Internal = std::integral_constant<bool, _Safe::value && _Fits>;
+  template<typename T,
+           typename Safe = std::is_nothrow_move_constructible<T>,
+           bool Fits = (sizeof(T) <= sizeof(Storage)) && (alignof(T) <= alignof(Storage))>
+  using Internal = std::integral_constant<bool, Safe::value && Fits>;
 
-  template<typename _Tp>
-  struct _Manager_internal; // uses small-object optimization
+  template<typename T> struct Manager_internal; // uses small-object optimization
+  template<typename T> struct Manager_external; // creates contained object on the heap
+  template<typename T>
+  using Manager = typename std::conditional<Internal<T>::value,
+                                            Manager_internal<T>,
+                                            Manager_external<T>>::type;
 
-  template<typename _Tp>
-  struct _Manager_external; // creates contained object on the heap
+  template<typename T, typename V = typename std::decay<T>::type>
+  using Decay_if_not_any = typename std::enable_if<!std::is_same<V, UncheckedAny>::value, V>::type;
 
-  template<typename _Tp>
-  using _Manager = typename std::conditional<_Internal<_Tp>::value,
-                                             _Manager_internal<_Tp>,
-                                             _Manager_external<_Tp>>::type;
-
-  template<typename _Tp, typename _VTp = typename std::decay<_Tp>::type>
-  using _Decay_if_not_any = typename std::enable_if<!std::is_same<_VTp, UncheckedAny>::value, _VTp>::type;
-
-  /// Emplace with an object created from @p __args as the contained object.
-  template <typename _Tp, typename... _Args,
-            typename _Mgr = _Manager<_Tp>>
-  void __do_emplace(_Args&&... __args)
-  {
+  // Emplace with an object created from args as the contained object.
+  template <typename T, typename... Args, typename Mgr = Manager<T>>
+  void do_emplace(Args&&... args) {
     reset();
-    _Mgr::_S_create(_M_storage, std::forward<_Args>(__args)...);
-    _M_manager = &_Mgr::_S_manage;
+    Mgr::create(_storage, std::forward<Args>(args)...);
+    _manager = &Mgr::manage;
   }
 
-  /// Emplace with an object created from @p __il and @p __args as
-  /// the contained object.
-  template <typename _Tp, typename _Up, typename... _Args,
-            typename _Mgr = _Manager<_Tp>>
-  void __do_emplace(std::initializer_list<_Up> __il, _Args&&... __args)
-  {
+  // Emplace with an object created from il and args as
+  // the contained object.
+  template <typename T, typename Up, typename... Args, typename Mgr = Manager<T>>
+  void do_emplace(std::initializer_list<Up> il, Args&&... args) {
     reset();
-    _Mgr::_S_create(_M_storage, __il, std::forward<_Args>(__args)...);
-    _M_manager = &_Mgr::_S_manage;
+    Mgr::create(_storage, il, std::forward<Args>(args)...);
+    _manager = &Mgr::manage;
   }
 
-  template <typename _Res, typename _Tp, typename... _Args>
-  using __any_constructible
-  = std::enable_if<__and_<std::is_copy_constructible<_Tp>,
-                          std::is_constructible<_Tp, _Args...>>::value,
-                   _Res>;
+  template <typename Res, typename T, typename... Args>
+  using any_constructible = std::enable_if<and_<std::is_copy_constructible<T>, std::is_constructible<T, Args...>>::value, Res>;
 
-  template <typename _Tp, typename... _Args>
-  using __any_constructible_t
-  = typename __any_constructible<bool, _Tp, _Args...>::type;
+  template <typename T, typename... Args>
+  using any_constructible_t = typename any_constructible<bool, T, Args...>::type;
 
-  template<typename _VTp, typename... _Args>
-  using __emplace_t
-  = typename __any_constructible<_VTp&, _VTp, _Args...>::type;
+  template<typename V, typename... Args>
+  using emplace_t = typename any_constructible<V&, V, Args...>::type;
 
 public:
   // construct/destruct
 
-  /// Default constructor, creates an empty object.
-  constexpr UncheckedAny() noexcept : _M_manager(nullptr) {}
+  // Default constructor, creates an empty object.
+  constexpr UncheckedAny() noexcept : _manager(nullptr) {}
 
-  /// Copy constructor, copies the state of @p __other
-  UncheckedAny(const UncheckedAny& __other)
-  {
-    if (!__other.has_value())
-      _M_manager = nullptr;
-    else
-      {
-        _Arg __arg;
-        __arg._M_any = this;
-        __other._M_manager(_Op_clone, &__other, &__arg);
-      }
+  // Copy constructor, copies the state of other
+  UncheckedAny(const UncheckedAny& other) {
+    if (!other.has_value())
+      _manager = nullptr;
+    else {
+      Arg arg;
+      arg._any = this;
+      other._manager(Op_clone, &other, &arg);
+    }
   }
 
-  // @brief Move constructor, transfer the state from @p __other
-  UncheckedAny(UncheckedAny&& __other) noexcept
-  {
-    if (!__other.has_value())
-      _M_manager = nullptr;
-    else
-      {
-        _Arg __arg;
-        __arg._M_any = this;
-        __other._M_manager(_Op_xfer, &__other, &__arg);
-      }
+  // Move constructor, transfer the state from other
+  UncheckedAny(UncheckedAny&& other) noexcept {
+    if (!other.has_value())
+      _manager = nullptr;
+    else {
+      Arg arg;
+      arg._any = this;
+      other._manager(Op_xfer, &other, &arg);
+    }
   }
 
-  /// Construct with a copy of @p __value as the contained object.
-  template <typename _Tp, typename _VTp = _Decay_if_not_any<_Tp>,
-            typename _Mgr = _Manager<_VTp>,
-            typename std::enable_if<std::is_copy_constructible<_VTp>::value
-#ifdef __cpp_lib_any
-                                    && !__is_in_place_type<_VTp>::value
+  // Construct with a copy of value as the contained object.
+  template <typename T, typename V = Decay_if_not_any<T>,
+            typename Mgr = Manager<V>,
+            typename std::enable_if<std::is_copy_constructible<V>::value
+#ifdef cpp_lib_any
+                                    && !is_in_place_type<V>::value
 #endif
                                     , bool>::type = true>
-  UncheckedAny(_Tp&& __value)
-    : _M_manager(&_Mgr::_S_manage)
-  {
-    _Mgr::_S_create(_M_storage, std::forward<_Tp>(__value));
+  UncheckedAny(T&& value) : _manager(&Mgr::manage) {
+    Mgr::create(_storage, std::forward<T>(value));
   }
 
-#ifdef __cpp_lib_any
-  /// Construct with an object created from @p __args as the contained object.
-  template <typename _Tp, typename... _Args, typename _VTp = typename std::decay<_Tp>::type,
-            typename _Mgr = _Manager<_VTp>,
-            __any_constructible_t<_VTp, _Args&&...> = false>
-  explicit
-  UncheckedAny(std::in_place_type_t<_Tp>, _Args&&... __args)
-    : _M_manager(&_Mgr::_S_manage)
-  {
-    _Mgr::_S_create(_M_storage, std::forward<_Args>(__args)...);
+#ifdef cpp_lib_any
+  // Construct with an object created from args as the contained object.
+  template <typename T, typename... Args, typename V = typename std::decay<T>::type, typename Mgr = Manager<V>, any_constructible_t<V, Args&&...> = false>
+  explicit UncheckedAny(std::in_place_type_t<T>, Args&&... args) : _manager(&Mgr::manage) {
+    Mgr::create(_storage, std::forward<Args>(args)...);
   }
 
-  /// Construct with an object created from @p __il and @p __args as
-  /// the contained object.
-  template <typename _Tp, typename _Up, typename... _Args,
-            typename _VTp = typename std::decay<_Tp>::type, typename _Mgr = _Manager<_VTp>,
-            __any_constructible_t<_VTp, std::initializer_list<_Up>,
-                                  _Args&&...> = false>
-  explicit
-  UncheckedAny(std::in_place_type_t<_Tp>, std::initializer_list<_Up> __il, _Args&&... __args)
-    : _M_manager(&_Mgr::_S_manage)
-  {
-    _Mgr::_S_create(_M_storage, __il, std::forward<_Args>(__args)...);
+  // Construct with an object created from il and args as the contained object.
+  template <typename T, typename Up, typename... Args, typename V = typename std::decay<T>::type, typename Mgr = Manager<V>, any_constructible_t<V, std::initializer_list<Up>, Args&&...> = false>
+  explicit UncheckedAny(std::in_place_type_t<T>, std::initializer_list<Up> il, Args&&... args) : _manager(&Mgr::manage) {
+    Mgr::create(_storage, il, std::forward<Args>(args)...);
   }
 #endif
 
-  /// Destructor, calls @c reset()
+  // Destructor, calls reset()
   ~UncheckedAny() { reset(); }
 
   // assignments
 
-  /// Copy the state of another object.
-  UncheckedAny&
-  operator=(const UncheckedAny& __rhs)
-  {
-    *this = UncheckedAny(__rhs);
+  // Copy the state of another object.
+  UncheckedAny& operator=(const UncheckedAny& rhs) {
+    *this = UncheckedAny(rhs);
     return *this;
   }
 
-  // @brief Move assignment operator
-  UncheckedAny&
-  operator=(UncheckedAny&& __rhs) noexcept
-  {
-    if (!__rhs.has_value())
+  // Move assignment operator
+  UncheckedAny& operator=(UncheckedAny&& rhs) noexcept {
+    if (!rhs.has_value())
       reset();
-    else if (this != &__rhs)
-      {
-        reset();
-        _Arg __arg;
-        __arg._M_any = this;
-        __rhs._M_manager(_Op_xfer, &__rhs, &__arg);
-      }
+    else if (this != &rhs) {
+      reset();
+      Arg arg;
+      arg._any = this;
+      rhs._manager(Op_xfer, &rhs, &arg);
+    }
     return *this;
   }
 
-  /// Store a copy of @p __rhs as the contained object.
-  template<typename _Tp>
-  typename std::enable_if<std::is_copy_constructible<_Decay_if_not_any<_Tp>>::value, UncheckedAny&>::type
-  operator=(_Tp&& __rhs)
-  {
-    *this = UncheckedAny(std::forward<_Tp>(__rhs));
+  // Store a copy of rhs as the contained object.
+  template<typename T>
+  typename std::enable_if<std::is_copy_constructible<Decay_if_not_any<T>>::value, UncheckedAny&>::type
+  operator=(T&& rhs) {
+    *this = UncheckedAny(std::forward<T>(rhs));
     return *this;
   }
 
-  /// Emplace with an object created from @p __args as the contained object.
-  template <typename _Tp, typename... _Args>
-  __emplace_t<typename std::decay<_Tp>::type, _Args...>
-  emplace(_Args&&... __args)
-  {
-    using _VTp = typename std::decay<_Tp>::type;
-    __do_emplace<_VTp>(std::forward<_Args>(__args)...);
-    UncheckedAny::_Arg __arg;
-    this->_M_manager(UncheckedAny::_Op_access, this, &__arg);
-    return *static_cast<_VTp*>(__arg._M_obj);
+  // Emplace with an object created from args as the contained object.
+  template <typename T, typename... Args>
+  emplace_t<typename std::decay<T>::type, Args...> emplace(Args&&... args) {
+    using V = typename std::decay<T>::type;
+    do_emplace<V>(std::forward<Args>(args)...);
+    UncheckedAny::Arg arg;
+    this->_manager(UncheckedAny::Op_access, this, &arg);
+    return *static_cast<V*>(arg._obj);
   }
 
-  /// Emplace with an object created from @p __il and @p __args as
-  /// the contained object.
-  template <typename _Tp, typename _Up, typename... _Args>
-  __emplace_t<typename std::decay<_Tp>::type, std::initializer_list<_Up>, _Args&&...>
-  emplace(std::initializer_list<_Up> __il, _Args&&... __args)
-  {
-    using _VTp = typename std::decay<_Tp>::type;
-    __do_emplace<_VTp, _Up>(__il, std::forward<_Args>(__args)...);
-    UncheckedAny::_Arg __arg;
-    this->_M_manager(UncheckedAny::_Op_access, this, &__arg);
-    return *static_cast<_VTp*>(__arg._M_obj);
+  // Emplace with an object created from il and args as the contained object.
+  template <typename T, typename Up, typename... Args>
+  emplace_t<typename std::decay<T>::type, std::initializer_list<Up>, Args&&...> emplace(std::initializer_list<Up> il, Args&&... args) {
+    using V = typename std::decay<T>::type;
+    do_emplace<V, Up>(il, std::forward<Args>(args)...);
+    UncheckedAny::Arg arg;
+    this->_manager(UncheckedAny::Op_access, this, &arg);
+    return *static_cast<V*>(arg._obj);
   }
 
   // modifiers
 
-  /// If not empty, destroy the contained object.
-  void reset() noexcept
-  {
-    if (has_value())
-      {
-        _M_manager(_Op_destroy, this, nullptr);
-        _M_manager = nullptr;
-      }
+  // If not empty, destroy the contained object.
+  void reset() noexcept {
+    if (has_value()) {
+      _manager(Op_destroy, this, nullptr);
+      _manager = nullptr;
+    }
   }
 
-  /// Exchange state with another object.
-  void swap(UncheckedAny& __rhs) noexcept
-  {
-    if (!has_value() && !__rhs.has_value())
-      return;
-
-    if (has_value() && __rhs.has_value())
-      {
-        if (this == &__rhs)
-          return;
-
-        UncheckedAny __tmp;
-        _Arg __arg;
-        __arg._M_any = &__tmp;
-        __rhs._M_manager(_Op_xfer, &__rhs, &__arg);
-        __arg._M_any = &__rhs;
-        _M_manager(_Op_xfer, this, &__arg);
-        __arg._M_any = this;
-        __tmp._M_manager(_Op_xfer, &__tmp, &__arg);
-      }
-    else
-      {
-        UncheckedAny* __empty = !has_value() ? this : &__rhs;
-        UncheckedAny* __full = !has_value() ? &__rhs : this;
-        _Arg __arg;
-        __arg._M_any = __empty;
-        __full->_M_manager(_Op_xfer, __full, &__arg);
-      }
+  // Exchange state with another object.
+  void swap(UncheckedAny& rhs) noexcept {
+    if (!has_value() && !rhs.has_value()) return;
+    if (has_value() && rhs.has_value()) {
+      if (this == &rhs) return;
+      UncheckedAny tmp;
+      Arg arg;
+      arg._any = &tmp;
+      rhs._manager(Op_xfer, &rhs, &arg);
+      arg._any = &rhs;
+      _manager(Op_xfer, this, &arg);
+      arg._any = this;
+      tmp._manager(Op_xfer, &tmp, &arg);
+    } else {
+      UncheckedAny* empty = !has_value() ? this : &rhs;
+      UncheckedAny* full = !has_value() ? &rhs : this;
+      Arg arg;
+      arg._any = empty;
+      full->_manager(Op_xfer, full, &arg);
+    }
   }
 
   // observers
 
-  /// Reports whether there is a contained object or not.
-  bool has_value() const noexcept { return _M_manager != nullptr; }
+  // Reports whether there is a contained object or not.
+  bool has_value() const noexcept { return _manager != nullptr; }
 
-  template<typename _Tp>
-  static constexpr bool __is_valid_cast()
-  { return __or_<std::is_reference<_Tp>, std::is_copy_constructible<_Tp>>::value; }
+  template<typename T> static constexpr bool is_valid_cast() { return or_<std::is_reference<T>, std::is_copy_constructible<T>>::value; }
 
 private:
-  enum _Op {
-    _Op_access, _Op_get_type_info, _Op_clone, _Op_destroy, _Op_xfer
+  enum Op { Op_access, Op_get_type_info, Op_clone, Op_destroy, Op_xfer };
+
+  union Arg {
+    void* _obj;
+    UncheckedAny* _any;
   };
 
-  union _Arg
-  {
-    void* _M_obj;
-    UncheckedAny* _M_any;
-  };
-
-  void (*_M_manager)(_Op, const UncheckedAny*, _Arg*);
-  _Storage _M_storage;
+  void (*_manager)(Op, const UncheckedAny*, Arg*);
+  Storage _storage;
 
   // Manage in-place contained object.
-  template<typename _Tp>
-  struct _Manager_internal
-  {
-    static void
-    _S_manage(_Op __which, const UncheckedAny* __anyp, _Arg* __arg);
+  template<typename T>
+  struct Manager_internal {
+    static void manage(Op which, const UncheckedAny* anyp, Arg* arg);
 
-    template<typename _Up>
-    static void
-    _S_create(_Storage& __storage, _Up&& __value)
-    {
-      void* __addr = &__storage._M_buffer;
-      ::new (__addr) _Tp(std::forward<_Up>(__value));
+    template<typename Up>
+    static void create(Storage& storage, Up&& value) {
+      void* addr = &storage._buffer;
+      ::new (addr) T(std::forward<Up>(value));
     }
 
-    template<typename... _Args>
-    static void
-    _S_create(_Storage& __storage, _Args&&... __args)
-    {
-      void* __addr = &__storage._M_buffer;
-      ::new (__addr) _Tp(std::forward<_Args>(__args)...);
+    template<typename... Args>
+    static void create(Storage& storage, Args&&... args) {
+      void* addr = &storage._buffer;
+      ::new (addr) T(std::forward<Args>(args)...);
     }
   };
 
   // Manage external contained object.
-  template<typename _Tp>
-  struct _Manager_external
-  {
-    static void
-    _S_manage(_Op __which, const UncheckedAny* __anyp, _Arg* __arg);
+  template<typename T>
+  struct Manager_external {
+    static void manage(Op which, const UncheckedAny* anyp, Arg* arg);
 
-    template<typename _Up>
-    static void
-    _S_create(_Storage& __storage, _Up&& __value)
-    {
-      __storage._M_ptr = new _Tp(std::forward<_Up>(__value));
+    template<typename Up>
+    static void create(Storage& storage, Up&& value) {
+      storage._ptr = new T(std::forward<Up>(value));
     }
-    template<typename... _Args>
-    static void
-    _S_create(_Storage& __storage, _Args&&... __args)
-    {
-      __storage._M_ptr = new _Tp(std::forward<_Args>(__args)...);
+    template<typename... Args>
+    static void create(Storage& storage, Args&&... args) {
+      storage._ptr = new T(std::forward<Args>(args)...);
     }
   };
 
 public:
-  /// Exchange the states of two @c any objects.
-  static void swap(UncheckedAny& __x, UncheckedAny& __y) noexcept { __x.swap(__y); }
+  // Exchange the states of two UncheckedAny objects.
+  static void swap(UncheckedAny& x, UncheckedAny& y) noexcept { x.swap(y); }
 
-  /// Create an any holding a @c _Tp constructed from @c __args.
-  template <typename _Tp, typename... _Args>
-  static UncheckedAny make_any(_Args&&... __args)
-  {
+  // Create an UncheckedAny holding a T constructed from args.
+  template <typename T, typename... Args>
+  static UncheckedAny make_any(Args&&... args) {
     return UncheckedAny(
-#ifdef __cpp_lib_any
-                        std::in_place_type<_Tp>,
+#ifdef cpp_lib_any
+                        std::in_place_type<T>,
 #endif
-                        std::forward<_Args>(__args)...);
+                        std::forward<Args>(args)...);
   }
 
-  /// Create an any holding a @c _Tp constructed from @c __il and @c __args.
-  template <typename _Tp, typename _Up, typename... _Args>
-  static UncheckedAny make_any(std::initializer_list<_Up> __il, _Args&&... __args)
-  {
+  // Create an UncheckedAny holding a T constructed from il and args.
+  template <typename T, typename Up, typename... Args>
+  static UncheckedAny make_any(std::initializer_list<Up> il, Args&&... args) {
     return UncheckedAny(
-#ifdef __cpp_lib_any
-                        std::in_place_type<_Tp>,
+#ifdef cpp_lib_any
+                        std::in_place_type<T>,
 #endif
-                        __il, std::forward<_Args>(__args)...);
+                        il, std::forward<Args>(args)...);
   }
 
-  /**
-   * @brief Access the contained object.
-   *
-   * @tparam  _ValueType  A const-reference or CopyConstructible type.
-   * @param   __any       The object to access.
-   * @return  The contained object.
-   */
-  template<typename _ValueType>
-  static _ValueType any_cast(const UncheckedAny& __any)
-  {
-    using _Up = __remove_cvref_t<_ValueType>;
-    static_assert(UncheckedAny::__is_valid_cast<_ValueType>(),
+  // Access the contained object.
+  //   ValueType  A const-reference or CopyConstructible type.
+  //   any        The object to access.
+  //   returns    The contained object.
+  template<typename ValueType>
+  static ValueType any_cast(const UncheckedAny& any) {
+    using Up = remove_cvref_t<ValueType>;
+    static_assert(UncheckedAny::is_valid_cast<ValueType>(),
                   "Template argument must be a reference or CopyConstructible type");
-    static_assert(std::is_constructible<_ValueType, const _Up&>::value,
+    static_assert(std::is_constructible<ValueType, const Up&>::value,
                   "Template argument must be constructible from a const value.");
-    auto __p = any_cast<_Up>(&__any);
-    if (__p)
-      return static_cast<_ValueType>(*__p);
-    static _Up bad;
+    auto p = any_cast<Up>(&any);
+    if (p) return static_cast<ValueType>(*p);
+    static Up bad;
     return bad;
   }
 
-  /**
-   * @brief Access the contained object.
-   *
-   * @tparam  _ValueType  A reference or CopyConstructible type.
-   * @param   __any       The object to access.
-   * @return  The contained object.
-   */
-  template<typename _ValueType>
-  static _ValueType any_cast(UncheckedAny& __any)
-  {
-    using _Up = __remove_cvref_t<_ValueType>;
-    static_assert(UncheckedAny::__is_valid_cast<_ValueType>(),
+  // Access the contained object.
+  //   ValueType  A reference or CopyConstructible type.
+  //   any        The object to access.
+  //   returns    The contained object.
+  template<typename ValueType>
+  static ValueType any_cast(UncheckedAny& any) {
+    using Up = remove_cvref_t<ValueType>;
+    static_assert(UncheckedAny::is_valid_cast<ValueType>(),
                   "Template argument must be a reference or CopyConstructible type");
-    static_assert(std::is_constructible<_ValueType, _Up&>::value,
+    static_assert(std::is_constructible<ValueType, Up&>::value,
                   "Template argument must be constructible from an lvalue.");
-    auto __p = any_cast<_Up>(&__any);
-    if (__p)
-      return static_cast<_ValueType>(*__p);
-    static _Up bad;
+    auto p = any_cast<Up>(&any);
+    if (p) return static_cast<ValueType>(*p);
+    static Up bad;
     return bad;
   }
 
-  template<typename _ValueType>
-  static _ValueType any_cast(UncheckedAny&& __any)
-  {
-    using _Up = __remove_cvref_t<_ValueType>;
-    static_assert(UncheckedAny::__is_valid_cast<_ValueType>(),
+  template<typename ValueType>
+  static ValueType any_cast(UncheckedAny&& any) {
+    using Up = remove_cvref_t<ValueType>;
+    static_assert(UncheckedAny::is_valid_cast<ValueType>(),
                   "Template argument must be a reference or CopyConstructible type");
-    static_assert(std::is_constructible<_ValueType, _Up>::value,
+    static_assert(std::is_constructible<ValueType, Up>::value,
                   "Template argument must be constructible from an rvalue.");
-    auto __p = any_cast<_Up>(&__any);
-    if (__p)
-      return static_cast<_ValueType>(std::move(*__p));
-    static _Up bad;
+    auto p = any_cast<Up>(&any);
+    if (p) return static_cast<ValueType>(std::move(*p));
+    static Up bad;
     return bad;
   }
 
-  template<typename _Tp>
-  static void* __any_caster(const UncheckedAny* __any)
-  {
-    // any_cast<T> returns non-null if __any->type() == typeid(T) and
-    // typeid(T) ignores cv-qualifiers so remove them:
-    using _Up = typename std::remove_cv<_Tp>::type;
-#ifdef __cpp_if_constexpr
-    // The contained value has a decayed type, so if std::decay<U>::type is not U,
-    // then it's not possible to have a contained value of type U:
-    if constexpr (!std::is_same<typename std::decay<_Up>::type, _Up>::value)
-                   return nullptr;
+  template<typename T>
+  static void* any_caster(const UncheckedAny* any) {
+    // any_cast<T> returns non-null if any->type() == typeid(T) and typeid(T) ignores cv-qualifiers so remove them:
+    using Up = typename std::remove_cv<T>::type;
+#ifdef cpp_if_constexpr
+    // The contained value has a decayed type, so if std::decay<U>::type is not U, then it's not possible to have a contained value of type U:
+    if constexpr (!std::is_same<typename std::decay<Up>::type, Up>::value) return nullptr;
     // Only copy constructible types can be used for contained values:
-    else if constexpr (!std::is_copy_constructible<_Up>::value)
-                        return nullptr;
+    else if constexpr (!std::is_copy_constructible<Up>::value) return nullptr;
     // First try comparing function addresses, which works without RTTI
     else
 #endif
-    if (__any->_M_manager == &UncheckedAny::_Manager<_Up>::_S_manage)
-      {
-        UncheckedAny::_Arg __arg;
-        __any->_M_manager(UncheckedAny::_Op_access, __any, &__arg);
-        return __arg._M_obj;
+      if (any->_manager == &UncheckedAny::Manager<Up>::manage) {
+        UncheckedAny::Arg arg;
+        any->_manager(UncheckedAny::Op_access, any, &arg);
+        return arg._obj;
       }
     return nullptr;
   }
 
-  /**
-   * @brief Access the contained object.
-   *
-   * @tparam  _ValueType  The type of the contained object.
-   * @param   __any       A pointer to the object to access.
-   * @return  The address of the contained object if <code>
-   *          __any != nullptr && __any.type() == typeid(_ValueType)
-   *          </code>, otherwise a null pointer.
-   */
-  template<typename _ValueType>
-  static const _ValueType* any_cast(const UncheckedAny* __any) noexcept
-  {
-#ifdef __cpp_if_constexpr
-    if constexpr (std::is_object<_ValueType>::value)
+  // Access the contained object.
+  //   ValueType  The type of the contained object.
+  //   any        A pointer to the object to access.
+  //   returns    The address of the contained object if
+  //                any != nullptr && any.type() == typeid(ValueType)
+  //              otherwise a null pointer.
+  template<typename ValueType>
+  static const ValueType* any_cast(const UncheckedAny* any) noexcept {
+#ifdef cpp_if_constexpr
+    if constexpr (std::is_object<ValueType>::value)
 #endif
-                   if (__any)
-                     return static_cast<_ValueType*>(__any_caster<_ValueType>(__any));
+      if (any) return static_cast<ValueType*>(any_caster<ValueType>(any));
     return nullptr;
   }
 
-  template<typename _ValueType>
-  static _ValueType* any_cast(UncheckedAny* __any) noexcept
-  {
-#ifdef __cpp_if_constexpr
-    if constexpr (std::is_object<_ValueType>::value)
+  template<typename ValueType>
+  static ValueType* any_cast(UncheckedAny* any) noexcept {
+#ifdef cpp_if_constexpr
+    if constexpr (std::is_object<ValueType>::value)
 #endif
-                   if (__any)
-                     return static_cast<_ValueType*>(__any_caster<_ValueType>(__any));
+      if (any) return static_cast<ValueType*>(any_caster<ValueType>(any));
     return nullptr;
   }
 };
 
-template<typename _Tp>
-void
-UncheckedAny::_Manager_internal<_Tp>::
-_S_manage(_Op __which, const UncheckedAny* __any, _Arg* __arg)
-{
-  // The contained object is in _M_storage._M_buffer
-  auto __ptr = reinterpret_cast<const _Tp*>(&__any->_M_storage._M_buffer);
-  switch (__which)
-    {
-    case _Op_access:
-      __arg->_M_obj = const_cast<_Tp*>(__ptr);
+template<typename T>
+void UncheckedAny::Manager_internal<T>::manage(Op which, const UncheckedAny* any, Arg* arg) {
+  // The contained object is in _storage._buffer
+  auto ptr = reinterpret_cast<const T*>(&any->_storage._buffer);
+  switch (which) {
+    case Op_access:
+      arg->_obj = const_cast<T*>(ptr);
       break;
-    case _Op_get_type_info:
+    case Op_get_type_info:
       break;
-    case _Op_clone:
-      ::new(&__arg->_M_any->_M_storage._M_buffer) _Tp(*__ptr);
-      __arg->_M_any->_M_manager = __any->_M_manager;
+    case Op_clone:
+      ::new(&arg->_any->_storage._buffer) T(*ptr);
+      arg->_any->_manager = any->_manager;
       break;
-    case _Op_destroy:
-      __ptr->~_Tp();
+    case Op_destroy:
+      ptr->~T();
       break;
-    case _Op_xfer:
-      ::new(&__arg->_M_any->_M_storage._M_buffer) _Tp
-        (std::move(*const_cast<_Tp*>(__ptr)));
-      __ptr->~_Tp();
-      __arg->_M_any->_M_manager = __any->_M_manager;
-      const_cast<UncheckedAny*>(__any)->_M_manager = nullptr;
+    case Op_xfer:
+      ::new(&arg->_any->_storage._buffer) T(std::move(*const_cast<T*>(ptr)));
+      ptr->~T();
+      arg->_any->_manager = any->_manager;
+      const_cast<UncheckedAny*>(any)->_manager = nullptr;
+      break;
+  }
+}
+
+template<typename T>
+void UncheckedAny::Manager_external<T>::manage(Op which, const UncheckedAny* any, Arg* arg) {
+  // The contained object is *_storage._ptr
+  auto ptr = static_cast<const T*>(any->_storage._ptr);
+  switch (which) {
+    case Op_access:
+      arg->_obj = const_cast<T*>(ptr);
+      break;
+    case Op_get_type_info:
+      break;
+    case Op_clone:
+      arg->_any->_storage._ptr = new T(*ptr);
+      arg->_any->_manager = any->_manager;
+      break;
+    case Op_destroy:
+      delete ptr;
+      break;
+    case Op_xfer:
+      arg->_any->_storage._ptr = any->_storage._ptr;
+      arg->_any->_manager = any->_manager;
+      const_cast<UncheckedAny*>(any)->_manager = nullptr;
       break;
     }
 }
 
-template<typename _Tp>
-void
-UncheckedAny::_Manager_external<_Tp>::
-_S_manage(_Op __which, const UncheckedAny* __any, _Arg* __arg)
-{
-  // The contained object is *_M_storage._M_ptr
-  auto __ptr = static_cast<const _Tp*>(__any->_M_storage._M_ptr);
-  switch (__which)
-    {
-    case _Op_access:
-      __arg->_M_obj = const_cast<_Tp*>(__ptr);
-      break;
-    case _Op_get_type_info:
-      break;
-    case _Op_clone:
-      __arg->_M_any->_M_storage._M_ptr = new _Tp(*__ptr);
-      __arg->_M_any->_M_manager = __any->_M_manager;
-      break;
-    case _Op_destroy:
-      delete __ptr;
-      break;
-    case _Op_xfer:
-      __arg->_M_any->_M_storage._M_ptr = __any->_M_storage._M_ptr;
-      __arg->_M_any->_M_manager = __any->_M_manager;
-      const_cast<UncheckedAny*>(__any)->_M_manager = nullptr;
-      break;
-    }
-}
-
-// specialisations of __or_ and __and_ from top of UncheckedAny
-template<> struct UncheckedAny::__or_<>  : public std::false_type {};
-template<> struct UncheckedAny::__and_<> : public std::true_type  {};
+// specialisations of or_ and and_ from top of UncheckedAny
+template<> struct UncheckedAny::or_<>  : public std::false_type {};
+template<> struct UncheckedAny::and_<> : public std::true_type  {};
 
 #endif
 
