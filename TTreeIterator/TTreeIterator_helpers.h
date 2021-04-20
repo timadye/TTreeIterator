@@ -377,7 +377,7 @@ namespace Cpp11 {
     template<typename ValueType>
     static ValueType any_cast(const Any& any) {
       using Up = remove_cvref_t<ValueType>;
-      static_assert(Any::is_valid_cast<ValueType>(),           "Template argument must be a reference or CopyConstructible type");
+      static_assert(Any::is_valid_cast<ValueType>(),                    "Template argument must be a reference or CopyConstructible type");
       static_assert(std::is_constructible<ValueType, const Up&>::value, "Template argument must be constructible from a const value.");
       auto p = any_cast<Up>(&any);
       if (p) return static_cast<ValueType>(*p);
@@ -391,7 +391,7 @@ namespace Cpp11 {
     template<typename ValueType>
     static ValueType any_cast(Any& any) {
       using Up = remove_cvref_t<ValueType>;
-      static_assert(Any::is_valid_cast<ValueType>(),     "Template argument must be a reference or CopyConstructible type");
+      static_assert(Any::is_valid_cast<ValueType>(),              "Template argument must be a reference or CopyConstructible type");
       static_assert(std::is_constructible<ValueType, Up&>::value, "Template argument must be constructible from an lvalue.");
       auto p = any_cast<Up>(&any);
       if (p) return static_cast<ValueType>(*p);
@@ -401,7 +401,7 @@ namespace Cpp11 {
     template<typename ValueType>
     static ValueType any_cast(Any&& any) {
       using Up = remove_cvref_t<ValueType>;
-      static_assert(Any::is_valid_cast<ValueType>(),    "Template argument must be a reference or CopyConstructible type");
+      static_assert(Any::is_valid_cast<ValueType>(),             "Template argument must be a reference or CopyConstructible type");
       static_assert(std::is_constructible<ValueType, Up>::value, "Template argument must be constructible from an rvalue.");
       auto p = any_cast<Up>(&any);
       if (p) return static_cast<ValueType>(std::move(*p));
