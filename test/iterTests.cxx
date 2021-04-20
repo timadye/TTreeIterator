@@ -88,8 +88,8 @@ template<> const char* TTreeIterator::GetLeaflist<MyStruct2>() { return "x/D:s/C
 
 // MyStruct3 is the same as MyStruct, but with instrumentation.
 struct MyStruct3 : public MyStruct, public ShowConstructors<MyStruct3> {
-  MyStruct3() : MyStruct{-1.0,-1.0,-1.0,-1}, ShowConstructors() {}
-  MyStruct3 (double x0, double x1, double x2, int ii) : MyStruct{x0,x1,x2,ii}, ShowConstructors(ShowConstructors::quiet()) { ShowConstructors::init(); }
+  MyStruct3() : MyStruct{{-1.0,-1.0,-1.0},-1}, ShowConstructors() {}
+  MyStruct3 (double x0, double x1, double x2, int ii) : MyStruct{{x0,x1,x2},ii}, ShowConstructors(ShowConstructors::quiet()) { ShowConstructors::init(); }
   const char* ContentsAsString() const { return Form("%g,%g,%g,%d",x[0],x[1],x[2],i); }
   using MyStruct::leaflist;
 };
@@ -217,7 +217,7 @@ TEST(iterTests1, AlgIter) {
 
   std::vector<double> vx;
   std::transform (iter.begin(), iter.end(), std::back_inserter(vx),
-                  [](auto& entry) -> double { return entry["x"]; });
+                  [](const TTreeIterator& entry) -> double { return entry["x"]; });
   std::cout << "vx = ";
   for (auto& x : vx) { if (&x != &vx.front()) std::cout << ','; std::cout << x; }
   std::cout << '\n';

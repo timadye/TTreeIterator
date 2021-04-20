@@ -96,7 +96,11 @@ inline Int_t TTreeIterator::Write (const char* name/*=0*/, Int_t option/*=0*/, I
 
 inline /*virtual*/ void TTreeIterator::reset() {
   fIndex = 0;
+#if defined(USE_OrderedMap) && defined(__cpp_lib_make_reverse_iterator)
   for (auto it = fBranches.rbegin(); it != fBranches.rend(); ++it) {
+#else
+  for (auto it = fBranches. begin(); it != fBranches. end(); ++it) {
+#endif
     BranchInfo& ibranch = it->second;
     ibranch.ResetAddress();
     ibranch.EnableReset();

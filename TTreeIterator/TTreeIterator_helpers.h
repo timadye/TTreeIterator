@@ -80,12 +80,14 @@ class UncheckedAny
   template<typename _B1, typename _B2> struct __and_<_B1, _B2> : public std::conditional<_B1::value, _B2, _B1>::type {};
   template<typename _B1, typename _B2, typename _B3, typename... _Bn> struct __and_<_B1, _B2, _B3, _Bn...>
     : public std::conditional<_B1::value, __and_<_B2, _B3, _Bn...>, _B1>::type {};
-  template<typename> struct __is_in_place_type_impl : std::false_type {};
-  template<typename _Tp> struct __is_in_place_type_impl<std::in_place_type_t<_Tp>> : std::true_type {};
-  template<typename _Tp> struct __is_in_place_type : public __is_in_place_type_impl<_Tp> {};
   // __remove_cvref_t (std::remove_cvref_t for C++11).
   template<typename _Tp> using __remove_cvref_t = typename std::remove_cv<typename std::remove_reference<_Tp>::type>::type;
 
+#ifdef __cpp_lib_any
+  template<typename> struct __is_in_place_type_impl : std::false_type {};
+  template<typename _Tp> struct __is_in_place_type_impl<std::in_place_type_t<_Tp>> : std::true_type {};
+  template<typename _Tp> struct __is_in_place_type : public __is_in_place_type_impl<_Tp> {};
+#endif
 
   // Holds either pointer to a heap object or the contained object itself.
   union _Storage
@@ -112,12 +114,12 @@ class UncheckedAny
   struct _Manager_external; // creates contained object on the heap
 
   template<typename _Tp>
-  using _Manager = std::conditional_t<_Internal<_Tp>::value,
-                                      _Manager_internal<_Tp>,
-                                      _Manager_external<_Tp>>;
+  using _Manager = typename std::conditional<_Internal<_Tp>::value,
+                                             _Manager_internal<_Tp>,
+                                             _Manager_external<_Tp>>::type;
 
-  template<typename _Tp, typename _VTp = std::decay_t<_Tp>>
-  using _Decay_if_not_any = std::enable_if_t<!std::is_same_v<_VTp, UncheckedAny>, _VTp>;
+  template<typename _Tp, typename _VTp = typename std::decay<_Tp>::type>
+  using _Decay_if_not_any = typename std::enable_if<!std::is_same<_VTp, UncheckedAny>::value, _VTp>::type;
 
   /// Emplace with an object created from @p __args as the contained object.
   template <typename _Tp, typename... _Args,
@@ -189,16 +191,20 @@ public:
   /// Construct with a copy of @p __value as the contained object.
   template <typename _Tp, typename _VTp = _Decay_if_not_any<_Tp>,
             typename _Mgr = _Manager<_VTp>,
-            std::enable_if_t<std::is_copy_constructible<_VTp>::value
-                             && !__is_in_place_type<_VTp>::value, bool> = true>
+            typename std::enable_if<std::is_copy_constructible<_VTp>::value
+#ifdef __cpp_lib_any
+                                    && !__is_in_place_type<_VTp>::value
+#endif
+                                    , bool>::type = true>
   UncheckedAny(_Tp&& __value)
     : _M_manager(&_Mgr::_S_manage)
   {
     _Mgr::_S_create(_M_storage, std::forward<_Tp>(__value));
   }
 
+#ifdef __cpp_lib_any
   /// Construct with an object created from @p __args as the contained object.
-  template <typename _Tp, typename... _Args, typename _VTp = std::decay_t<_Tp>,
+  template <typename _Tp, typename... _Args, typename _VTp = typename std::decay<_Tp>::type,
             typename _Mgr = _Manager<_VTp>,
             __any_constructible_t<_VTp, _Args&&...> = false>
   explicit
@@ -211,7 +217,7 @@ public:
   /// Construct with an object created from @p __il and @p __args as
   /// the contained object.
   template <typename _Tp, typename _Up, typename... _Args,
-            typename _VTp = std::decay_t<_Tp>, typename _Mgr = _Manager<_VTp>,
+            typename _VTp = typename std::decay<_Tp>::type, typename _Mgr = _Manager<_VTp>,
             __any_constructible_t<_VTp, std::initializer_list<_Up>,
                                   _Args&&...> = false>
   explicit
@@ -220,6 +226,7 @@ public:
   {
     _Mgr::_S_create(_M_storage, __il, std::forward<_Args>(__args)...);
   }
+#endif
 
   /// Destructor, calls @c reset()
   ~UncheckedAny() { reset(); }
@@ -252,7 +259,7 @@ public:
 
   /// Store a copy of @p __rhs as the contained object.
   template<typename _Tp>
-  std::enable_if_t<std::is_copy_constructible<_Decay_if_not_any<_Tp>>::value, UncheckedAny&>
+  typename std::enable_if<std::is_copy_constructible<_Decay_if_not_any<_Tp>>::value, UncheckedAny&>::type
   operator=(_Tp&& __rhs)
   {
     *this = UncheckedAny(std::forward<_Tp>(__rhs));
@@ -261,10 +268,10 @@ public:
 
   /// Emplace with an object created from @p __args as the contained object.
   template <typename _Tp, typename... _Args>
-  __emplace_t<std::decay_t<_Tp>, _Args...>
+  __emplace_t<typename std::decay<_Tp>::type, _Args...>
   emplace(_Args&&... __args)
   {
-    using _VTp = std::decay_t<_Tp>;
+    using _VTp = typename std::decay<_Tp>::type;
     __do_emplace<_VTp>(std::forward<_Args>(__args)...);
     UncheckedAny::_Arg __arg;
     this->_M_manager(UncheckedAny::_Op_access, this, &__arg);
@@ -274,10 +281,10 @@ public:
   /// Emplace with an object created from @p __il and @p __args as
   /// the contained object.
   template <typename _Tp, typename _Up, typename... _Args>
-  __emplace_t<std::decay_t<_Tp>, std::initializer_list<_Up>, _Args&&...>
+  __emplace_t<typename std::decay<_Tp>::type, std::initializer_list<_Up>, _Args&&...>
   emplace(std::initializer_list<_Up> __il, _Args&&... __args)
   {
-    using _VTp = std::decay_t<_Tp>;
+    using _VTp = typename std::decay<_Tp>::type;
     __do_emplace<_VTp, _Up>(__il, std::forward<_Args>(__args)...);
     UncheckedAny::_Arg __arg;
     this->_M_manager(UncheckedAny::_Op_access, this, &__arg);
@@ -402,14 +409,22 @@ public:
   template <typename _Tp, typename... _Args>
   static UncheckedAny make_any(_Args&&... __args)
   {
-    return UncheckedAny(std::in_place_type<_Tp>, std::forward<_Args>(__args)...);
+    return UncheckedAny(
+#ifdef __cpp_lib_any
+                        std::in_place_type<_Tp>,
+#endif
+                        std::forward<_Args>(__args)...);
   }
 
   /// Create an any holding a @c _Tp constructed from @c __il and @c __args.
   template <typename _Tp, typename _Up, typename... _Args>
   static UncheckedAny make_any(std::initializer_list<_Up> __il, _Args&&... __args)
   {
-    return UncheckedAny(std::in_place_type<_Tp>, __il, std::forward<_Args>(__args)...);
+    return UncheckedAny(
+#ifdef __cpp_lib_any
+                        std::in_place_type<_Tp>,
+#endif
+                        __il, std::forward<_Args>(__args)...);
   }
 
   /**
@@ -447,7 +462,7 @@ public:
     using _Up = __remove_cvref_t<_ValueType>;
     static_assert(UncheckedAny::__is_valid_cast<_ValueType>(),
                   "Template argument must be a reference or CopyConstructible type");
-    static_assert(std::is_constructible_v<_ValueType, _Up&>,
+    static_assert(std::is_constructible<_ValueType, _Up&>::value,
                   "Template argument must be constructible from an lvalue.");
     auto __p = any_cast<_Up>(&__any);
     if (__p)
@@ -476,16 +491,19 @@ public:
   {
     // any_cast<T> returns non-null if __any->type() == typeid(T) and
     // typeid(T) ignores cv-qualifiers so remove them:
-    using _Up = std::remove_cv_t<_Tp>;
-    // The contained value has a decayed type, so if std::decay_t<U> is not U,
+    using _Up = typename std::remove_cv<_Tp>::type;
+#ifdef __cpp_if_constexpr
+    // The contained value has a decayed type, so if std::decay<U>::type is not U,
     // then it's not possible to have a contained value of type U:
-    if constexpr (!std::is_same<std::decay_t<_Up>, _Up>::value)
+    if constexpr (!std::is_same<typename std::decay<_Up>::type, _Up>::value)
                    return nullptr;
     // Only copy constructible types can be used for contained values:
     else if constexpr (!std::is_copy_constructible<_Up>::value)
                         return nullptr;
     // First try comparing function addresses, which works without RTTI
-    else if (__any->_M_manager == &UncheckedAny::_Manager<_Up>::_S_manage)
+    else
+#endif
+    if (__any->_M_manager == &UncheckedAny::_Manager<_Up>::_S_manage)
       {
         UncheckedAny::_Arg __arg;
         __any->_M_manager(UncheckedAny::_Op_access, __any, &__arg);
@@ -506,7 +524,9 @@ public:
   template<typename _ValueType>
   static const _ValueType* any_cast(const UncheckedAny* __any) noexcept
   {
+#ifdef __cpp_if_constexpr
     if constexpr (std::is_object<_ValueType>::value)
+#endif
                    if (__any)
                      return static_cast<_ValueType*>(__any_caster<_ValueType>(__any));
     return nullptr;
@@ -515,7 +535,9 @@ public:
   template<typename _ValueType>
   static _ValueType* any_cast(UncheckedAny* __any) noexcept
   {
+#ifdef __cpp_if_constexpr
     if constexpr (std::is_object<_ValueType>::value)
+#endif
                    if (__any)
                      return static_cast<_ValueType*>(__any_caster<_ValueType>(__any));
     return nullptr;
@@ -666,8 +688,6 @@ public:
     }
     pointer operator->() const { return &(operator*()); }
   };
-  using       reverse_iterator = std::reverse_iterator<      iterator>;
-  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
         iterator  begin()       { return       iterator(_vec. begin()); }
         iterator  end  ()       { return       iterator(_vec. end  ()); }
@@ -675,12 +695,16 @@ public:
         iterator  end  () const { return       iterator(const_cast<vector_type&>(_vec).end  ()); }
   const_iterator cbegin() const { return const_iterator(_vec.cbegin()); }
   const_iterator cend  () const { return const_iterator(_vec.cend  ()); }
+#ifdef __cpp_lib_make_reverse_iterator
+  using       reverse_iterator = std::reverse_iterator<      iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
   std::reverse_iterator<      iterator>  rbegin()       { return std::make_reverse_iterator( end  ()); }
   std::reverse_iterator<      iterator>  rend  ()       { return std::make_reverse_iterator( begin()); }
   std::reverse_iterator<const_iterator>  rbegin() const { return std::make_reverse_iterator(cend  ()); }
   std::reverse_iterator<const_iterator>  rend  () const { return std::make_reverse_iterator(cbegin()); }
   std::reverse_iterator<const_iterator> crbegin() const { return std::make_reverse_iterator(cend  ()); }
   std::reverse_iterator<const_iterator> crend  () const { return std::make_reverse_iterator(cbegin()); }
+#endif
 
   mapped_type& operator[] (const key_type& k) {
     return insert ({k,T()}).first->second;
