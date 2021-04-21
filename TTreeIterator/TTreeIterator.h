@@ -18,19 +18,20 @@ class TDirectory;
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
 //#define USE_OrderedMap 1           // instead of std::map, use OrderedMap from TTreeIterator_helpers.h
-#ifdef __cpp_lib_any
+//#define SHOW_FEATURE_MACROS 1
+#if __cplusplus >= 201703L           // <version> not available until GCC9, so no way to define __cpp_lib_any without including <any>.
 #define USE_STD_ANY 1                // use C++17's std::any, instead of Cpp11::Any from TTreeIterator_helpers.h
 #endif
-
-#include "TTreeIterator_helpers.h"
 
 #ifndef USE_OrderedMap
 #include <map>
 #endif
 #ifdef USE_STD_ANY
 #include <any>
+namespace any_namespace = ::std;
 #endif
 
+#include "TTreeIterator_helpers.h"
 
 class TTreeIterator : public TNamed {
 
@@ -44,6 +45,7 @@ public:
   using any_type = std::any;
 #else
   using any_type = Cpp11::Any;
+  using any_namespace = any_type;
 #endif
 
   // Interface to std::iterator to allow range-based for loop
@@ -136,10 +138,10 @@ public:
     }
     template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
     template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
-    template <typename T> const T& GetValue()    const { return any_type::any_cast<T&>(value); }
-    template <typename T>       T& GetValue()          { return any_type::any_cast<T&>(value); }
-    template <typename T> const T* GetValuePtr() const { return any_type::any_cast<T>(&value); }
-    template <typename T>       T* GetValuePtr()       { return any_type::any_cast<T>(&value); }
+    template <typename T> const T& GetValue()    const { return any_namespace::any_cast<T&>(value); }
+    template <typename T>       T& GetValue()          { return any_namespace::any_cast<T&>(value); }
+    template <typename T> const T* GetValuePtr() const { return any_namespace::any_cast<T>(&value); }
+    template <typename T>       T* GetValuePtr()       { return any_namespace::any_cast<T>(&value); }
   };
 
   // Constructors and destructors

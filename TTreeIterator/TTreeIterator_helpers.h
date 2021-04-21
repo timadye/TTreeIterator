@@ -25,6 +25,20 @@
 #include "TNamed.h"
 #include "TString.h"
 
+#ifdef SHOW_FEATURE_MACROS
+#define SHOWVAR1(x) SHOWVAR2(x)
+#define SHOWVAR2(x) #x
+#define SHOWVAR(var) #var "=" SHOWVAR1(var)
+// The __cpp_lib* feature test macros are defined in the associated header file, or in <version> (GCC9+).
+#pragma message SHOWVAR(__cplusplus)
+#pragma message SHOWVAR(__cpp_if_constexpr)
+#pragma message SHOWVAR(__cpp_variable_templates)
+#pragma message SHOWVAR(__cpp_lib_any)
+#pragma message SHOWVAR(__cpp_lib_variant)
+#pragma message SHOWVAR(__cpp_lib_make_unique)
+#pragma message SHOWVAR(__cpp_lib_make_reverse_iterator)
+#endif
+
 // generates compilation error and shows real type name (and place of declaration in some cases)
 // in an error message, useful for debugging boost::mpl like recurrent types.
 // https://stackoverflow.com/a/50726702
