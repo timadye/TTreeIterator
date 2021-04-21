@@ -395,9 +395,9 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::SetBranchInfo (const char* name, T&& val) const {
 #ifdef USE_MAP_EMPLACE
-  auto ret = fBranches.emplace (std::make_pair                 (name, typeid(T).hash_code()), BranchInfo (std::forward<T>(val)));
+  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, typeid(T).hash_code()), std::forward_as_tuple(val));
 #else
-  auto ret = fBranches.insert  (std::make_pair (std::make_pair (name, typeid(T).hash_code()), BranchInfo (std::forward<T>(val))));
+  auto ret = fBranches.insert  ({{name, typeid(T).hash_code()}, std::forward<T>(val)});
 #endif
   BranchInfo* ibranch = &ret.first->second;
 #ifndef FEWER_CHECKS

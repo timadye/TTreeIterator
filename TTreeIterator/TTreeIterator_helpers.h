@@ -528,6 +528,8 @@ namespace Cpp11 {
 #include <vector>
 #include <iterator>
 
+#include "TError.h"
+
 template<typename Key, typename T>
 class OrderedMap : public std::map< Key, std::pair<T,size_t> > {
 public:
@@ -626,15 +628,25 @@ public:
     return map_type::at(k).first;
   }
 
-  std::pair<iterator, bool> emplace(key_type&& k, mapped_type&& v) {
-    return vector_insert (map_type::emplace (std::piecewise_construct, std::forward_as_tuple(k), std::forward_as_tuple(v,0)));
-  }
-//  I couldn't get the STL signature to work, probably because it refused to default the added 0:
-//template<typename... Args> std::pair<iterator, bool> emplace(Args&&... args) {
-//  return vector_insert (map_type::emplace (std::forward<Args>(args)...));    }
-
   std::pair<iterator, bool> insert (const value_type& val) {
     return vector_insert (map_type::insert ({val.first, typename map_type::mapped_type (val.second,0)}));
+  }
+
+  // I couldn't get the STL signature to work, probably because it refused to default the added 0:
+  //template<typename... Args> std::pair<iterator, bool> emplace(Args&&... args) {
+  //  return vector_insert (map_type::emplace (std::forward<Args>(args)...));    }
+
+  template<typename K, typename V> std::pair<iterator, bool>
+  emplace (const std::piecewise_construct_t& pc, K&& k, std::tuple<V>&& v) {
+    ::Info("emplace","map::emplace(pc,k,v)");
+    return vector_insert (map_type::emplace (pc, std::forward<K>(k), std::forward_as_tuple(std::get<0>(v),0)));
+  }
+
+  std::pair<iterator, bool> emplace (value_type&& val) {
+    ::Info("emplace","map::emplace(val)");
+    return vector_insert (map_type::emplace (std::piecewise_construct,
+                                             std::forward_as_tuple(std::get<0>(val)),
+                                             std::forward_as_tuple(std::get<1>(val), 0)));
   }
 
   iterator find (const key_type& key) const {
