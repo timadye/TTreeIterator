@@ -1,5 +1,5 @@
 cmake_minimum_required( VERSION 3.2 FATAL_ERROR )
-set(CMAKE_CXX_STANDARD 17)
+#set(CMAKE_CXX_STANDARD 11)   # should work with C++11 or later, but don't specify because this (-std=c++17 setting) needs to match the version ROOT was built with for string_view compatibility
 project(TTreeIterator)
 
 if(APPLE)
