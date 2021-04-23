@@ -20,17 +20,26 @@ class TDirectory;
 #define USE_OrderedMap 1             // instead of std::map, use faster OrderedMap from TTreeIterator_helpers.h
 //#define SHOW_FEATURE_MACROS 1
 //#define OrderedMap_STATS
-#if __cplusplus >= 201703L           // <version> not available until GCC9, so no way to define __cpp_lib_any without including <any>.
-#define USE_STD_ANY 1                // use C++17's std::any, instead of Cpp11::Any from TTreeIterator_helpers.h
+#define USE_Cpp11_Any 1              // use Cpp11::Any from detail/Cpp11_Any.h instead of C++17's std::any
+
+
+#if __cplusplus < 201703L            // <version> not available until GCC9, so no way to check __cpp_lib_any without including <any>.
+#define USE_Cpp11_Any                // only option is to use Cpp11::Any
 #endif
 
-#ifndef USE_OrderedMap
+#ifdef USE_OrderedMap
+#include "TTreeIterator/detail/OrderedMap.h"
+#else
 #include <map>
 #endif
-#ifdef USE_STD_ANY
+
+#ifdef USE_Cpp11_Any
+#include "TTreeIterator/detail/Cpp11_Any.h"               // Implementation of std::any, compatible with C++11.
+#else
 #include <any>
 namespace any_namespace = ::std;
 #endif
+
 
 #include "TTreeIterator/detail/TTreeIterator_helpers.h"
 
