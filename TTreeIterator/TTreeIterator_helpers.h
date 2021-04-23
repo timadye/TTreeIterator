@@ -601,6 +601,13 @@ public:
     pointer operator->() const { return &(operator*()); }
   };
 
+#ifdef OrderedMap_STATS
+  ~OrderedMap() {
+    if (nhits || nmiss)
+      Info ("~OrderedMap", "OrderedMap had %lu hits, %lu misses, %.1f%% success rate", nhits, nmiss, double(100*nhits)/double(nhits+nmiss));
+    }
+#endif
+
         iterator  begin()       { return       iterator(_vec. begin()); }
         iterator  end  ()       { return       iterator(_vec. end  ()); }
         iterator  begin() const { return       iterator(const_cast<vector_type&>(_vec).begin()); }
@@ -638,12 +645,10 @@ public:
 
   template<typename K, typename V> std::pair<iterator, bool>
   emplace (const std::piecewise_construct_t& pc, K&& k, std::tuple<V>&& v) {
-    ::Info("emplace","map::emplace(pc,k,v)");
     return vector_insert (map_type::emplace (pc, std::forward<K>(k), std::forward_as_tuple(std::get<0>(v),0)));
   }
 
   std::pair<iterator, bool> emplace (value_type&& val) {
-    ::Info("emplace","map::emplace(val)");
     return vector_insert (map_type::emplace (std::piecewise_construct,
                                              std::forward_as_tuple(std::get<0>(val)),
                                              std::forward_as_tuple(std::get<1>(val), 0)));
@@ -676,7 +681,15 @@ private:
     ++_last;
     if (_last >= _vec.size()) _last = 0;
     auto& mit = _vec[_last];
-    if (mit->first == key) return iterator(*this, mit);
+    if (mit->first == key) {
+#ifdef OrderedMap_STATS
+      ++nhits;
+#endif
+      return iterator(*this, mit);
+    }
+#ifdef OrderedMap_STATS
+    ++nmiss;
+#endif
     _try_last = false;
     return end();
   }
@@ -696,6 +709,9 @@ private:
 
   mutable bool _try_last = false;
   mutable size_t _last = 0;
+#ifdef OrderedMap_STATS
+  mutable size_t nhits=0, nmiss=0;
+#endif
   vector_type _vec;
 };
 

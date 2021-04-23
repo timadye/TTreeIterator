@@ -17,8 +17,9 @@ class TDirectory;
 //#define FEWER_CHECKS 1             // skip sanity/debug checks if on every entry
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
-#define USE_OrderedMap 1             // instead of std::map, use OrderedMap from TTreeIterator_helpers.h
+#define USE_OrderedMap 1             // instead of std::map, use faster OrderedMap from TTreeIterator_helpers.h
 //#define SHOW_FEATURE_MACROS 1
+//#define OrderedMap_STATS
 #if __cplusplus >= 201703L           // <version> not available until GCC9, so no way to define __cpp_lib_any without including <any>.
 #define USE_STD_ANY 1                // use C++17's std::any, instead of Cpp11::Any from TTreeIterator_helpers.h
 #endif

@@ -7,6 +7,7 @@
 #include "TFile.h"
 #include "TTree.h"
 
+#include "test/GTestSetup.h"
 #include "TTreeIterator/TTreeIterator.h"
 
 // ==========================================================================================
@@ -32,6 +33,7 @@ constexpr size_t nx3 = 100;
 const double vinit = 42.3;  // fill each element with a different value starting from here
 const UInt_t wait_ms = 1000;
 const int verbose = 1;
+int LimitedEventListener::maxmsg = 10;
 
 // ==========================================================================================
 // Global definitions
