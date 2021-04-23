@@ -166,7 +166,15 @@ public:
       fVerbose(verbose)
   { SetBranchStatusAll(false); }
 
-  ~TTreeIterator() override { if (fTreeOwned) delete fTree; }
+  ~TTreeIterator() override {
+    if (fTreeOwned) delete fTree;
+    if (fVerbose >= 1) {
+      if (fTotFill>0 || fTotWrite>0)
+        Info ("TTreeIterator", "filled %lld bytes total; wrote %lld bytes at end", fTotFill, fTotWrite);
+      if (fTotRead>0)
+        Info ("TTreeIterator", "read %lld bytes total", fTotRead);
+    }
+  }
 
   // Access to underlying tree
   TTree* operator->() const { return GetTree(); }
@@ -303,6 +311,7 @@ protected:
 
   // Member variables
   Long64_t fIndex=0;
+  mutable ULong64_t fTotFill=0, fTotWrite=0, fTotRead=0;
   mutable branch_map_type<std::pair<std::string,size_t>,BranchInfo> fBranches;
   TTree* fTree=nullptr;
   bool fTreeOwned=false;

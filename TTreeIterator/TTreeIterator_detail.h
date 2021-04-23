@@ -73,6 +73,7 @@ inline /*virtual*/ TTreeIterator& TTreeIterator::GetEntry() {
 
   Int_t nbytes = fTree->GetEntry(fIndex);
   if (nbytes >= 0) {
+    fTotRead += nbytes;
     if (fVerbose >= 2) {
       std::string allbranches = BranchNamesString();
       Info  ("GetEntry", "read %d bytes from entry %lld for branches: %s", nbytes, fIndex, allbranches.c_str());
@@ -93,6 +94,7 @@ inline /*virtual*/ Int_t TTreeIterator::Fill() {
   Int_t nbytes = fTree->Fill();
 
   if (nbytes >= 0) {
+    fTotFill += nbytes;
     if (fVerbose >= 2) {
       std::string allbranches = BranchNamesString();
       Info  ("Fill", "Filled %d bytes for entry %lld, branches: %s", nbytes, fIndex, allbranches.c_str());
@@ -115,6 +117,7 @@ inline Int_t TTreeIterator::Write (const char* name/*=0*/, Int_t option/*=0*/, I
   Int_t nbytes = 0;
   if (fWriting && fTree && fTree->GetDirectory() && fTree->GetDirectory()->IsWritable()) {
     nbytes = fTree->Write (name, option, bufsize);
+    if (nbytes>0) fTotWrite += nbytes;
     if (fVerbose >= 1) Info ("Write", "wrote %d bytes to file %s", nbytes, fTree->GetDirectory()->GetName());
   }
   fWriting = false;
@@ -242,7 +245,7 @@ inline /*static*/ const char* TTreeIterator::tname(const char* name/*=0*/) {
 
 
 template <typename T>
-inline auto TTreeIterator::GetBranch(const char* name) const -> BranchInfo* {
+inline TTreeIterator::BranchInfo* TTreeIterator::GetBranch(const char* name) const {
   BranchInfo* ibranch = GetBranchInfo<T> (name);
   if (ibranch) return ibranch;
   ibranch = SetBranchInfo<T> (name, type_default<T>());
@@ -260,6 +263,7 @@ inline auto TTreeIterator::GetBranch(const char* name) const -> BranchInfo* {
     } else if (nread == 0) {
       if (fVerbose >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
     } else {
+      fTotRead += nread;
       if (fVerbose >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, fIndex);
       return ibranch;
     }
@@ -469,6 +473,7 @@ template <typename T>
 inline Int_t TTreeIterator::FillBranch (TBranch* branch, const char* name) {
   Int_t nbytes = branch->Fill();
   if (nbytes > 0) {
+    fTotFill += nbytes;
     fWriting = true;
     if (fVerbose >= 2) Info  (tname<T>("Set"), "filled branch '%s' with %d bytes for entry %lld", name, nbytes, fIndex);
   } else if (nbytes == 0) {
