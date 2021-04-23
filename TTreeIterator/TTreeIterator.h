@@ -32,7 +32,7 @@ class TDirectory;
 namespace any_namespace = ::std;
 #endif
 
-#include "TTreeIterator_helpers.h"
+#include "TTreeIterator/detail/TTreeIterator_helpers.h"
 
 class TTreeIterator : public TNamed {
 
@@ -334,6 +334,6 @@ template<> inline int           TTreeIterator::type_default() { return -1;  }
 template<> inline long int      TTreeIterator::type_default() { return -1;  }
 template<> inline long long int TTreeIterator::type_default() { return -1;  }
 
-#include "TTreeIterator_detail.h"
+#include "TTreeIterator/detail/TTreeIterator_detail.h"
 
 #endif /* ROOT_TTreeIterator */
