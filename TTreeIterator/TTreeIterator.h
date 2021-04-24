@@ -17,7 +17,8 @@ class TDirectory;
 //#define FEWER_CHECKS 1             // skip sanity/debug checks if on every entry
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
-#define USE_OrderedMap 1             // instead of std::map, use faster OrderedMap from TTreeIterator_helpers.h
+//#define USE_OrderedMap 1           // instead of std::map, use faster OrderedMap from TTreeIterator_helpers.h
+#define USE_Vector_BranchInfo
 //#define SHOW_FEATURE_MACROS 1
 //#define OrderedMap_STATS
 #define USE_Cpp11_Any 1              // use Cpp11::Any from detail/Cpp11_Any.h instead of C++17's std::any
@@ -125,6 +126,11 @@ public:
 
   // Our local cache of branch information
   struct BranchInfo {
+#ifdef USE_Vector_BranchInfo
+    std::string name;
+    size_t   type;
+    bool (TTreeIterator::*SetBranchAddressImpl)(BranchInfo*, const char*, const char*, bool) const = 0;  // function to set the address again
+#endif
     any_type value;
     void*    pvalue = nullptr;
 #ifndef OVERRIDE_BRANCH_ADDRESS
@@ -146,7 +152,11 @@ public:
 #endif
          ) branch->ResetAddress();
     }
+#ifdef USE_Vector_BranchInfo
+    template <typename T>        BranchInfo(const char* nam, size_t typ, bool (TTreeIterator::*f)(BranchInfo*, const char*, const char*, bool) const, T&& val) : name(nam), type(typ), SetBranchAddressImpl(f), value(std::forward<T>(val)) {}
+#else
     template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
+#endif
     template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
     template <typename T> const T& GetValue()    const { return any_namespace::any_cast<T&>(value); }
     template <typename T>       T& GetValue()          { return any_namespace::any_cast<T&>(value); }
@@ -173,7 +183,7 @@ public:
       fTree(tree),
       fIndex(tree ? tree->GetEntries() : 0),
       fVerbose(verbose)
-  { SetBranchStatusAll(false); }
+  { Init(0,false); }
 
   ~TTreeIterator() override {
     if (fTreeOwned) delete fTree;
@@ -306,22 +316,32 @@ private:
 protected:
 
   // internal methods
-  void Init (TDirectory* dir=nullptr);
+  void Init (TDirectory* dir=nullptr, bool owned=true);
   template <typename T> BranchInfo* GetBranch(const char* name) const;
   template <typename T> BranchInfo* GetBranchInfo (const char* name) const;
   template <typename T> const T& SetValue (BranchInfo* ibranch, const char* name, T&& val);
   template <typename T> BranchInfo* NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
   template <typename T> BranchInfo* SetBranchInfo (const char* name, T&& val) const;
   template <typename T> bool SetBranchAddress (BranchInfo* ibranch, const char* name, const char* call="Get") const;
+  template <typename T> bool SetBranchAddressImpl (BranchInfo* ibranch, const char* name, const char* call, bool redo=false) const;
   template <typename T> Int_t FillBranch (TBranch* branch, const char* name);
   static void SetBranchStatus (TObjArray* list, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void SetBranchStatus (TBranch* branch, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void BranchNames (std::vector<std::string>& allbranches, TObjArray* list, bool include_children, bool include_inactive, const std::string& pre="");
+#ifdef USE_Vector_BranchInfo
+  void SetBranchAddressAll (const char* call="SetBranchInfo") const;
+#endif
 
   // Member variables
   Long64_t fIndex=0;
   mutable ULong64_t fTotFill=0, fTotWrite=0, fTotRead=0;
+#ifdef USE_Vector_BranchInfo
+  mutable std::vector<BranchInfo> fBranches;
+  mutable std::vector<BranchInfo>::iterator fLastBranch;
+  mutable bool fTryLast = false;
+#else
   mutable branch_map_type<std::pair<std::string,size_t>,BranchInfo> fBranches;
+#endif
   TTree* fTree=nullptr;
   bool fTreeOwned=false;
   Int_t fBufsize=32000;
