@@ -4,10 +4,11 @@
 #ifndef ROOT_TTreeIterator_helpers
 #define ROOT_TTreeIterator_helpers
 
-//#define NO_cxxabi_h
+//#define NO_cxxabi_h 1
+//#define SHOW_FEATURE_MACROS 1
 
 #ifdef _MSC_VER
-#define NO_cxxabi_h
+#define NO_cxxabi_h 1
 #endif
 
 #include <cstdio>

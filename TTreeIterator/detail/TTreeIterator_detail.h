@@ -9,7 +9,7 @@
 #include "TFile.h"
 #include "TChain.h"
 
-#define USE_MAP_EMPLACE  // use map::emplace instead of map::insert, which is probably a good idea but probably makes little difference
+#define USE_MAP_EMPLACE 1  // use map::emplace instead of map::insert, which is probably a good idea but probably makes little difference
 
 
 inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=true*/) {
@@ -67,6 +67,21 @@ inline Int_t TTreeIterator::Add (const char* name, Long64_t nentries/*=TTree::kM
   Int_t nfiles = chain->Add (name, nentries);
   if (nfiles > 0 && fVerbose >= 1) Info ("Add", "added %d files to chain '%s': %s", nfiles, chain->GetName(), name);
   return nfiles;
+}
+
+
+inline TTreeIterator::~TTreeIterator() /*override*/ {
+  if (fTreeOwned) delete fTree;
+#ifdef BranchInfo_STATS
+  if (nhits || nmiss)
+    Info ("TTreeIterator", "BranchInfo had %lu hits, %lu misses, %.1f%% success rate", nhits, nmiss, double(100*nhits)/double(nhits+nmiss));
+#endif
+  if (fVerbose >= 1) {
+    if (fTotFill>0 || fTotWrite>0)
+      Info ("TTreeIterator", "filled %lld bytes total; wrote %lld bytes at end", fTotFill, fTotWrite);
+    if (fTotRead>0)
+      Info ("TTreeIterator", "read %lld bytes total", fTotRead);
+  }
 }
 
 
@@ -285,39 +300,38 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranch(const char* name) con
 }
 
 
-template <typename T>
-inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name) const {
-  using V = typename std::remove_reference<T>::type;
-
-  BranchInfo* ibranch = nullptr;
+inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name, type_code_t type) const {
 #ifdef USE_Vector_BranchInfo
-  auto type = typeid(T).hash_code();
   if (fTryLast) {
     ++fLastBranch;
     if (fLastBranch == fBranches.end()) fLastBranch = fBranches.begin();
     BranchInfo& b = *fLastBranch;
-    if (b.name == name && b.type == type) ibranch = &b;
+    if (b.type == type && b.name == name) return &b;
   }
-  if (!ibranch) {
-    for (auto& b : fBranches) {
-      if (!(b.name == name && b.type == type)) continue;
-      ibranch = &b;
-      if (fBranches.size() >= 2) {
-        fTryLast = true;
-        fLastBranch = decltype(fLastBranch)(&b);  // not sure if this is strictly allowed, but seems to work
-      }
-      break;
-    }
-    if (!ibranch) {
-      fTryLast = false;
-      return nullptr;
+  for (auto ib = fBranches.begin(); ib != fBranches.end(); ib++) {
+    if (ib == fLastBranch) continue;    // already checked this one
+    BranchInfo& b = *ib;
+    if (b.type == type && b.name == name) {
+      fTryLast = true;
+      fLastBranch = ib;
+      return &b;
     }
   }
+  fTryLast = false;
+  return nullptr;
 #else
-  auto it = fBranches.find({name,typeid(T).hash_code()});
+  auto it = fBranches.find ({name, type});
   if (it == fBranches.end()) return nullptr;
-  ibranch = &it->second;
+  return &it->second;
 #endif
+}
+
+
+template <typename T>
+inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name) const {
+  using V = typename std::remove_reference<T>::type;
+  BranchInfo* ibranch = GetBranchInfo (name, typeid(T).hash_code());
+  if (!ibranch) return ibranch;
 #ifndef FEWER_CHECKS
   if (fVerbose >= 2) {
     void* addr;
@@ -443,7 +457,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::SetBranchInfo (const char* name
   if (front != &fBranches.front()) SetBranchAddressAll("SetBranchInfo");  // vector data() moved
   BranchInfo* ibranch = &fBranches.back();
 #else
-#if USE_MAP_EMPLACE
+#ifdef USE_MAP_EMPLACE
   auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, typeid(T).hash_code()), std::forward_as_tuple(val));
 #else
   auto ret = fBranches.insert  ({{name, typeid(T).hash_code()}, std::forward<T>(val)});
@@ -525,7 +539,7 @@ inline bool TTreeIterator::SetBranchAddressImpl (BranchInfo* ibranch, const char
 
 #ifdef USE_Vector_BranchInfo
 inline void TTreeIterator::SetBranchAddressAll (const char* call) const {
-  if   (fVerbose >= 1) Info  (call, "cache reallocated, so need to set all branch addresses again");
+  if (fVerbose >= 1) Info  (call, "cache reallocated, so need to set all branch addresses again");
   for (auto& b : fBranches) {
     if (b.SetBranchAddressImpl && b.set && !b.puser) {
       (this->*b.SetBranchAddressImpl) (&b, b.name.c_str(), call, true);

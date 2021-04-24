@@ -13,22 +13,24 @@
 
 class TDirectory;
 
-// define these for fastest speed
+// define some different implementation methods to compare for speed
 //#define FEWER_CHECKS 1             // skip sanity/debug checks if on every entry
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
-//#define USE_OrderedMap 1           // instead of std::map, use faster OrderedMap from TTreeIterator_helpers.h
-#define USE_Vector_BranchInfo
-//#define SHOW_FEATURE_MACROS 1
-//#define OrderedMap_STATS
+//#define USE_OrderedMap 1           // BranchInfo container is an OrderedMap from TTreeIterator_helpers.h (otherwise use std::map)
+#define USE_Vector_BranchInfo 1      // BranchInfo container is a std::vector
+//#define BranchInfo_STATS 1         // print stats for optimised BranchInfo lookup
 #define USE_Cpp11_Any 1              // use Cpp11::Any from detail/Cpp11_Any.h instead of C++17's std::any
 
 
 #if __cplusplus < 201703L            // <version> not available until GCC9, so no way to check __cpp_lib_any without including <any>.
-#define USE_Cpp11_Any                // only option is to use Cpp11::Any
+#define USE_Cpp11_Any 1              // only option is to use Cpp11::Any
 #endif
 
 #ifdef USE_OrderedMap
+#ifdef BranchInfo_STATS
+#define OrderedMap_STATS 1
+#endif
 #include "TTreeIterator/detail/OrderedMap.h"
 #else
 #include <map>
@@ -36,6 +38,7 @@ class TDirectory;
 
 #ifdef USE_Cpp11_Any
 #include "TTreeIterator/detail/Cpp11_Any.h"               // Implementation of std::any, compatible with C++11.
+using     any_namespace = Cpp11::Any;
 #else
 #include <any>
 namespace any_namespace = ::std;
@@ -45,19 +48,18 @@ namespace any_namespace = ::std;
 #include "TTreeIterator/detail/TTreeIterator_helpers.h"
 
 class TTreeIterator : public TNamed {
-
 public:
 #ifdef USE_OrderedMap
   template <typename K, typename V> using branch_map_type = OrderedMap<K,V>;
 #else
   template <typename K, typename V> using branch_map_type = std::map<K,V>;
 #endif
-#ifdef USE_STD_ANY
-  using any_type = std::any;
-#else
+#ifdef USE_Cpp11_Any
   using any_type = Cpp11::Any;
-  using any_namespace = any_type;
+#else
+  using any_type = std::any;
 #endif
+  using type_code_t = std::size_t;
 
   // Interface to std::iterator to allow range-based for loop
   class iterator
@@ -124,12 +126,18 @@ public:
     using TTree::CheckBranchAddressType;
   };
 
+  // BranchInfo definitions
+  class BranchInfo;
+
+  // member function pointer definition to allow access to templated code
+  typedef bool (TTreeIterator::*SetBranchAddressImpl_t) (BranchInfo* ibranch, const char* name, const char* call, bool redo) const;
+
   // Our local cache of branch information
   struct BranchInfo {
 #ifdef USE_Vector_BranchInfo
-    std::string name;
-    size_t   type;
-    bool (TTreeIterator::*SetBranchAddressImpl)(BranchInfo*, const char*, const char*, bool) const = 0;  // function to set the address again
+    std::string  name;
+    type_code_t  type;
+    SetBranchAddressImpl_t SetBranchAddressImpl = 0;  // function to set the address again
 #endif
     any_type value;
     void*    pvalue = nullptr;
@@ -153,7 +161,8 @@ public:
          ) branch->ResetAddress();
     }
 #ifdef USE_Vector_BranchInfo
-    template <typename T>        BranchInfo(const char* nam, size_t typ, bool (TTreeIterator::*f)(BranchInfo*, const char*, const char*, bool) const, T&& val) : name(nam), type(typ), SetBranchAddressImpl(f), value(std::forward<T>(val)) {}
+    template <typename T>        BranchInfo(const char* nam, type_code_t typ, SetBranchAddressImpl_t f, T&& val)
+      : name(nam), type(typ), SetBranchAddressImpl(f),          value           (std::forward<T>(val)) {}
 #else
     template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
 #endif
@@ -185,15 +194,7 @@ public:
       fVerbose(verbose)
   { Init(0,false); }
 
-  ~TTreeIterator() override {
-    if (fTreeOwned) delete fTree;
-    if (fVerbose >= 1) {
-      if (fTotFill>0 || fTotWrite>0)
-        Info ("TTreeIterator", "filled %lld bytes total; wrote %lld bytes at end", fTotFill, fTotWrite);
-      if (fTotRead>0)
-        Info ("TTreeIterator", "read %lld bytes total", fTotRead);
-    }
-  }
+  ~TTreeIterator() override;
 
   // Access to underlying tree
   TTree* operator->() const { return GetTree(); }
@@ -319,6 +320,7 @@ protected:
   void Init (TDirectory* dir=nullptr, bool owned=true);
   template <typename T> BranchInfo* GetBranch(const char* name) const;
   template <typename T> BranchInfo* GetBranchInfo (const char* name) const;
+                        BranchInfo* GetBranchInfo (const char* name, type_code_t type) const;
   template <typename T> const T& SetValue (BranchInfo* ibranch, const char* name, T&& val);
   template <typename T> BranchInfo* NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
   template <typename T> BranchInfo* SetBranchInfo (const char* name, T&& val) const;
@@ -339,8 +341,11 @@ protected:
   mutable std::vector<BranchInfo> fBranches;
   mutable std::vector<BranchInfo>::iterator fLastBranch;
   mutable bool fTryLast = false;
+#ifdef BranchInfo_STATS
+  mutable size_t nhits=0, nmiss=0;
+#endif
 #else
-  mutable branch_map_type<std::pair<std::string,size_t>,BranchInfo> fBranches;
+  mutable branch_map_type<std::pair<std::string,type_code_t>,BranchInfo> fBranches;
 #endif
   TTree* fTree=nullptr;
   bool fTreeOwned=false;
