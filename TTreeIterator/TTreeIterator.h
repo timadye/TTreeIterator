@@ -19,7 +19,7 @@ class TDirectory;
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
 //#define USE_OrderedMap 1           // BranchInfo container is an OrderedMap from TTreeIterator_helpers.h (otherwise use std::map)
 #define USE_Vector_BranchInfo 1      // BranchInfo container is a std::vector
-//#define BranchInfo_STATS 1         // print stats for optimised BranchInfo lookup
+#define BranchInfo_STATS 1           // Keep stats for optimised BranchInfo lookup. Prints in ~TTreeIterator if verbose.
 #define USE_Cpp11_Any 1              // use Cpp11::Any from detail/Cpp11_Any.h instead of C++17's std::any
 
 
@@ -49,17 +49,6 @@ namespace any_namespace = ::std;
 
 class TTreeIterator : public TNamed {
 public:
-#ifdef USE_OrderedMap
-  template <typename K, typename V> using branch_map_type = OrderedMap<K,V>;
-#else
-  template <typename K, typename V> using branch_map_type = std::map<K,V>;
-#endif
-#ifdef USE_Cpp11_Any
-  using any_type = Cpp11::Any;
-#else
-  using any_type = std::any;
-#endif
-  using type_code_t = std::size_t;
 
   // Interface to std::iterator to allow range-based for loop
   class iterator
@@ -118,59 +107,6 @@ public:
   public:
     Setter(TTreeIterator& entry, const char* name) : Getter(entry,name) {}
     template <typename T> const T& operator= (T&& val) { return const_cast<TTreeIterator&>(fEntry).Set<T>(fName, std::forward<T>(val)); }
-  };
-
-  // Hack to allow access to protected method TTree::CheckBranchAddressType()
-  struct TTreeProtected : public TTree {
-    static TTreeProtected& Access (TTree& t) { return (TTreeProtected&) t; }
-    using TTree::CheckBranchAddressType;
-  };
-
-  // BranchInfo definitions
-  class BranchInfo;
-
-  // member function pointer definition to allow access to templated code
-  typedef bool (TTreeIterator::*SetBranchAddressImpl_t) (BranchInfo* ibranch, const char* name, const char* call, bool redo) const;
-
-  // Our local cache of branch information
-  struct BranchInfo {
-#ifdef USE_Vector_BranchInfo
-    std::string  name;
-    type_code_t  type;
-    SetBranchAddressImpl_t SetBranchAddressImpl = 0;  // function to set the address again
-#endif
-    any_type value;
-    void*    pvalue = nullptr;
-#ifndef OVERRIDE_BRANCH_ADDRESS
-    void**   puser  = nullptr;
-#endif
-    TBranch* branch = nullptr;
-    bool     set    = false;
-    bool     isobj  = false;
-    bool     was_disabled = false;
-    void  Enable     (int verbose=0) { if ( (was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
-    void  EnableReset(int verbose=0) { if (  was_disabled)                                   SetBranchStatus (false, verbose); }
-    void Disable     (int verbose=0) { if (!(was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus (false, verbose); }
-    void DisableReset(int verbose=0) { if (! was_disabled)                                   SetBranchStatus ( true, verbose); }
-    void SetBranchStatus (bool status=true, int verbose=0) { TTreeIterator::SetBranchStatus (branch, status, true, verbose); }
-    void ResetAddress() {
-      if (branch && set
-#ifndef OVERRIDE_BRANCH_ADDRESS
-          && !puser
-#endif
-         ) branch->ResetAddress();
-    }
-#ifdef USE_Vector_BranchInfo
-    template <typename T>        BranchInfo(const char* nam, type_code_t typ, SetBranchAddressImpl_t f, T&& val)
-      : name(nam), type(typ), SetBranchAddressImpl(f),          value           (std::forward<T>(val)) {}
-#else
-    template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
-#endif
-    template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
-    template <typename T> const T& GetValue()    const { return any_namespace::any_cast<T&>(value); }
-    template <typename T>       T& GetValue()          { return any_namespace::any_cast<T&>(value); }
-    template <typename T> const T* GetValuePtr() const { return any_namespace::any_cast<T>(&value); }
-    template <typename T>       T* GetValuePtr()       { return any_namespace::any_cast<T>(&value); }
   };
 
   // Constructors and destructors
@@ -310,11 +246,73 @@ public:
   template <typename T> static T           type_default() { return T();                   }
   template <typename T> static const char* GetLeaflist()  { return GetLeaflistImpl<T>(0); }
 
+// ====================================================================
+// Implementation details
+// ====================================================================
+
 private:
   template <typename T> static decltype(T::leaflist) GetLeaflistImpl(int)  { return T::leaflist; }
   template <typename T> static const char*           GetLeaflistImpl(long) { return nullptr;     }
 
 protected:
+
+  // BranchInfo definitions
+  class BranchInfo;
+#ifdef USE_OrderedMap
+  template <typename K, typename V> using branch_map_type = OrderedMap<K,V>;
+#else
+  template <typename K, typename V> using branch_map_type = std::map<K,V>;
+#endif
+#ifdef USE_Cpp11_Any
+  using any_type = Cpp11::Any;
+#else
+  using any_type = std::any;
+#endif
+  using type_code_t = std::size_t;
+
+  // member function pointer definition to allow access to templated code
+  typedef bool (TTreeIterator::*SetBranchAddressImpl_t) (BranchInfo* ibranch, const char* name, const char* call, bool redo) const;
+
+  // Our local cache of branch information
+  struct BranchInfo {
+#ifdef USE_Vector_BranchInfo
+    std::string  name;
+    type_code_t  type;
+    SetBranchAddressImpl_t SetBranchAddressImpl = 0;  // function to set the address again
+#endif
+    any_type value;
+    void*    pvalue = nullptr;
+#ifndef OVERRIDE_BRANCH_ADDRESS
+    void**   puser  = nullptr;
+#endif
+    TBranch* branch = nullptr;
+    bool     set    = false;
+    bool     isobj  = false;
+    bool     was_disabled = false;
+    void  Enable     (int verbose=0) { if ( (was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
+    void  EnableReset(int verbose=0) { if (  was_disabled)                                   SetBranchStatus (false, verbose); }
+    void Disable     (int verbose=0) { if (!(was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus (false, verbose); }
+    void DisableReset(int verbose=0) { if (! was_disabled)                                   SetBranchStatus ( true, verbose); }
+    void SetBranchStatus (bool status=true, int verbose=0) { TTreeIterator::SetBranchStatus (branch, status, true, verbose); }
+    void ResetAddress() {
+      if (branch && set
+#ifndef OVERRIDE_BRANCH_ADDRESS
+          && !puser
+#endif
+         ) branch->ResetAddress();
+    }
+#ifdef USE_Vector_BranchInfo
+    template <typename T>        BranchInfo(const char* nam, type_code_t typ, SetBranchAddressImpl_t f, T&& val)
+      : name(nam), type(typ), SetBranchAddressImpl(f),          value           (std::forward<T>(val)) {}
+#else
+    template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
+#endif
+    template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
+    template <typename T> const T& GetValue()    const { return any_namespace::any_cast<T&>(value); }
+    template <typename T>       T& GetValue()          { return any_namespace::any_cast<T&>(value); }
+    template <typename T> const T* GetValuePtr() const { return any_namespace::any_cast<T>(&value); }
+    template <typename T>       T* GetValuePtr()       { return any_namespace::any_cast<T>(&value); }
+  };
 
   // internal methods
   void Init (TDirectory* dir=nullptr, bool owned=true);
@@ -333,6 +331,12 @@ protected:
 #ifdef USE_Vector_BranchInfo
   void SetBranchAddressAll (const char* call="SetBranchInfo") const;
 #endif
+
+  // Hack to allow access to protected method TTree::CheckBranchAddressType()
+  struct TTreeProtected : public TTree {
+    static TTreeProtected& Access (TTree& t) { return (TTreeProtected&) t; }
+    using TTree::CheckBranchAddressType;
+  };
 
   // Member variables
   Long64_t fIndex=0;

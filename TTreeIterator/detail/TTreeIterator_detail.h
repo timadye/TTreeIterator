@@ -72,11 +72,11 @@ inline Int_t TTreeIterator::Add (const char* name, Long64_t nentries/*=TTree::kM
 
 inline TTreeIterator::~TTreeIterator() /*override*/ {
   if (fTreeOwned) delete fTree;
-#ifdef BranchInfo_STATS
-  if (nhits || nmiss)
-    Info ("TTreeIterator", "BranchInfo had %lu hits, %lu misses, %.1f%% success rate", nhits, nmiss, double(100*nhits)/double(nhits+nmiss));
-#endif
   if (fVerbose >= 1) {
+#ifdef BranchInfo_STATS
+    if (nhits || nmiss)
+      Info ("TTreeIterator", "GetBranchInfo optimisation had %lu hits, %lu misses, %.1f%% success rate", nhits, nmiss, double(100*nhits)/double(nhits+nmiss));
+#endif
     if (fTotFill>0 || fTotWrite>0)
       Info ("TTreeIterator", "filled %lld bytes total; wrote %lld bytes at end", fTotFill, fTotWrite);
     if (fTotRead>0)
@@ -306,7 +306,12 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
     ++fLastBranch;
     if (fLastBranch == fBranches.end()) fLastBranch = fBranches.begin();
     BranchInfo& b = *fLastBranch;
-    if (b.type == type && b.name == name) return &b;
+    if (b.type == type && b.name == name) {
+#ifdef BranchInfo_STATS
+      ++nhits;
+#endif
+      return &b;
+    }
   }
   for (auto ib = fBranches.begin(); ib != fBranches.end(); ib++) {
     if (ib == fLastBranch) continue;    // already checked this one
@@ -314,6 +319,9 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
     if (b.type == type && b.name == name) {
       fTryLast = true;
       fLastBranch = ib;
+#ifdef BranchInfo_STATS
+      ++nmiss;
+#endif
       return &b;
     }
   }
