@@ -113,7 +113,7 @@ inline /*virtual*/ TTreeIterator& TTreeIterator::GetEntry() {
 template <typename T>
 inline /*static*/ void TTreeIterator::SetDefaultValue (TTreeIterator& tt, BranchInfo* ibranch, const char* name) {
   using V = remove_cvref_t<T>;
-  if (tt.fVerbose >= 1) tt.Info (tname<T>("Set"), "branch '%s' value was not set for entry %lld - set default", name, tt.fIndex);
+  if (tt.fVerbose >= 1) tt.Info (tname<T>("Set"), "branch '%s' value was not set for entry %lld - use type's default", name, tt.fIndex);
   tt.SetValue<T>(ibranch, name, type_default<V>());
 }
 
@@ -286,6 +286,7 @@ template <typename T>
 inline /*static*/ const char* TTreeIterator::tname(const char* name/*=0*/) {
   TClass* cl = TClass::GetClass<T>();
   const char* cname = cl ? cl->GetName() : TDataType::GetTypeName (TDataType::GetType(typeid(T)));
+  if (!cname || !*cname) cname = type_name<T>();   // use ROOT's shorter name by preference, but fall back on cxxabi or type_info name 
   if (!cname || !*cname) return name ? name : "";
   if (!name  || !*name)  return cname;
   static std::string ret;  // keep here so the c_str() is still valid at the end (until the next call).
@@ -343,7 +344,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
     }
   }
   for (auto ib = fBranches.begin(); ib != fBranches.end(); ib++) {
-    if (ib == fLastBranch) continue;    // already checked this one
+    if (fTryLast && ib == fLastBranch) continue;    // already checked this one
     BranchInfo& b = *ib;
     if (b.type == type && b.name == name) {
       fTryLast = true;
