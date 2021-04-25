@@ -338,7 +338,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name) const {
   using V = typename std::remove_reference<T>::type;
-  BranchInfo* ibranch = GetBranchInfo (name, typeid(T).hash_code());
+  BranchInfo* ibranch = GetBranchInfo (name, type_code<T>());
   if (!ibranch) return ibranch;
 #ifndef FEWER_CHECKS
   if (fVerbose >= 2) {
@@ -461,14 +461,14 @@ inline TTreeIterator::BranchInfo* TTreeIterator::SetBranchInfo (const char* name
 #ifdef USE_Vector_BranchInfo
   using V = typename std::remove_reference<T>::type;
   BranchInfo* front = &fBranches.front();
-  fBranches.emplace_back (name, typeid(T).hash_code(), &TTreeIterator::SetBranchAddressImpl<V>, std::forward<T>(val));
+  fBranches.emplace_back (name, type_code<T>(), &TTreeIterator::SetBranchAddressImpl<V>, std::forward<T>(val));
   if (front != &fBranches.front()) SetBranchAddressAll("SetBranchInfo");  // vector data() moved
   BranchInfo* ibranch = &fBranches.back();
 #else
 #ifdef USE_MAP_EMPLACE
-  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, typeid(T).hash_code()), std::forward_as_tuple(val));
+  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, type_code<T>()), std::forward_as_tuple(val));
 #else
-  auto ret = fBranches.insert  ({{name, typeid(T).hash_code()}, std::forward<T>(val)});
+  auto ret = fBranches.insert  ({{name, type_code<T>()}, std::forward<T>(val)});
 #endif
   BranchInfo* ibranch = &ret.first->second;
 #ifndef FEWER_CHECKS
@@ -549,7 +549,11 @@ inline bool TTreeIterator::SetBranchAddressImpl (BranchInfo* ibranch, const char
 inline void TTreeIterator::SetBranchAddressAll (const char* call) const {
   if (fVerbose >= 1) Info  (call, "cache reallocated, so need to set all branch addresses again");
   for (auto& b : fBranches) {
-    if (b.SetBranchAddressImpl && b.set && !b.puser) {
+    if (b.SetBranchAddressImpl && b.set
+#ifndef OVERRIDE_BRANCH_ADDRESS
+        && !b.puser
+#endif
+       ) {
       (this->*b.SetBranchAddressImpl) (&b, b.name.c_str(), call, true);
     }
   }

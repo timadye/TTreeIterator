@@ -265,10 +265,13 @@ protected:
 #endif
 #ifdef USE_Cpp11_Any
   using any_type = Cpp11::Any;
+  using type_code_t = any_namespace::Any_type_code;
+  template<typename T> static constexpr type_code_t type_code() { return any_namespace::type_code<T>(); }
 #else
   using any_type = std::any;
-#endif
   using type_code_t = std::size_t;
+  template<typename T> static constexpr type_code_t type_code() { return typeid(T).hash_code(); }
+#endif
 
   // member function pointer definition to allow access to templated code
   typedef bool (TTreeIterator::*SetBranchAddressImpl_t) (BranchInfo* ibranch, const char* name, const char* call, bool redo) const;
