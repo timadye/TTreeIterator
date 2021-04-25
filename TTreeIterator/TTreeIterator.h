@@ -17,6 +17,7 @@ class TDirectory;
 //#define FEWER_CHECKS 1             // skip sanity/debug checks if on every entry
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
+//#define NO_FILL_UNSET_DEFAULT 1    // don't set default values if unset
 //#define USE_OrderedMap 1           // BranchInfo container is an OrderedMap from TTreeIterator_helpers.h (otherwise use std::map)
 #define USE_Vector_BranchInfo 1      // BranchInfo container is a std::vector
 #define BranchInfo_STATS 1           // Keep stats for optimised BranchInfo lookup. Prints in ~TTreeIterator if verbose.
@@ -189,7 +190,7 @@ public:
   // Create empty branch
   template <typename T>
   TBranch* Branch (const char* name) {
-    using V = typename std::remove_reference<T>::type;
+    using V = remove_cvref_t<T>;
     return Branch<T> (name, GetLeaflist<V>(), fBufsize, fSplitlevel);
   }
 
@@ -204,7 +205,7 @@ public:
 
   template <typename T>
   const T& Set(const char* name, T&& val) {
-    using V = typename std::remove_reference<T>::type;
+    using V = remove_cvref_t<T>;
     return Set<T> (name, std::forward<T>(val), GetLeaflist<V>(), fBufsize, fSplitlevel);
   }
 
@@ -273,15 +274,18 @@ protected:
   template<typename T> static constexpr type_code_t type_code() { return typeid(T).hash_code(); }
 #endif
 
+  // remove_cvref_t (std::remove_cvref_t for C++11).
+  template<typename T> using remove_cvref_t = typename std::remove_cv<typename std::remove_reference<T>::type>::type;
+
   // member function pointer definition to allow access to templated code
-  typedef bool (TTreeIterator::*SetBranchAddressImpl_t) (BranchInfo* ibranch, const char* name, const char* call, bool redo) const;
+  typedef bool (*SetValueAddress_t) (const TTreeIterator& tt, BranchInfo* ibranch, const char* name, const char* call, bool redo);
+  typedef void (*SetDefaultValue_t) (      TTreeIterator& tt, BranchInfo* ibranch, const char* name);
 
   // Our local cache of branch information
   struct BranchInfo {
 #ifdef USE_Vector_BranchInfo
     std::string  name;
     type_code_t  type;
-    SetBranchAddressImpl_t SetBranchAddressImpl = 0;  // function to set the address again
 #endif
     any_type value;
     void*    pvalue = nullptr;
@@ -289,7 +293,12 @@ protected:
     void**   puser  = nullptr;
 #endif
     TBranch* branch = nullptr;
+    SetDefaultValue_t SetDefaultValue = 0;  // function to set value to the default
+#ifdef USE_Vector_BranchInfo
+    SetValueAddress_t SetValueAddress = 0;  // function to set the address again
+#endif
     bool     set    = false;
+    bool     unset  = false;
     bool     isobj  = false;
     bool     was_disabled = false;
     void  Enable     (int verbose=0) { if ( (was_disabled = branch->TestBit(kDoNotProcess))) SetBranchStatus ( true, verbose); }
@@ -305,10 +314,11 @@ protected:
          ) branch->ResetAddress();
     }
 #ifdef USE_Vector_BranchInfo
-    template <typename T>        BranchInfo(const char* nam, type_code_t typ, SetBranchAddressImpl_t f, T&& val)
-      : name(nam), type(typ), SetBranchAddressImpl(f),          value           (std::forward<T>(val)) {}
+    template <typename T> BranchInfo(const char* nam, type_code_t typ, T&& val, SetDefaultValue_t fd, SetValueAddress_t fa)
+      : name(nam), type(typ), value (std::forward<T>(val)), SetDefaultValue(fd), SetValueAddress(fa) {}
 #else
-    template <typename T>        BranchInfo(T&& val) :          value           (std::forward<T>(val)) {}
+    template <typename T> BranchInfo(T&& val, SetDefaultValue_t fd)
+      :                       value (std::forward<T>(val)), SetDefaultValue(fd) {}
 #endif
     template <typename T>       T& SetValue(T&& val)   { return value.emplace<T>(std::forward<T>(val)); }
     template <typename T> const T& GetValue()    const { return any_namespace::any_cast<T&>(value); }
@@ -326,8 +336,9 @@ protected:
   template <typename T> BranchInfo* NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
   template <typename T> BranchInfo* SetBranchInfo (const char* name, T&& val) const;
   template <typename T> bool SetBranchAddress (BranchInfo* ibranch, const char* name, const char* call="Get") const;
-  template <typename T> bool SetBranchAddressImpl (BranchInfo* ibranch, const char* name, const char* call, bool redo=false) const;
   template <typename T> Int_t FillBranch (TBranch* branch, const char* name);
+  template <typename T> static bool SetValueAddress (const TTreeIterator& tt, BranchInfo* ibranch, const char* name, const char* call, bool redo=false);
+  template <typename T> static void SetDefaultValue (      TTreeIterator& tt, BranchInfo* ibranch, const char* name);
   static void SetBranchStatus (TObjArray* list, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void SetBranchStatus (TBranch* branch, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void BranchNames (std::vector<std::string>& allbranches, TObjArray* list, bool include_children, bool include_inactive, const std::string& pre="");

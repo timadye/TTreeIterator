@@ -110,8 +110,37 @@ inline /*virtual*/ TTreeIterator& TTreeIterator::GetEntry() {
 }
 
 
+template <typename T>
+inline /*static*/ void TTreeIterator::SetDefaultValue (TTreeIterator& tt, BranchInfo* ibranch, const char* name) {
+  using V = remove_cvref_t<T>;
+  if (tt.fVerbose >= 1) tt.Info (tname<T>("Set"), "branch '%s' value was not set for entry %lld - set default", name, tt.fIndex);
+  tt.SetValue<T>(ibranch, name, type_default<V>());
+}
+
+
 inline /*virtual*/ Int_t TTreeIterator::Fill() {
   if (!fTree) return 0;
+
+#ifndef NO_FILL_UNSET_DEFAULT
+  for (auto& b : fBranches) {
+#ifdef USE_Vector_BranchInfo
+    BranchInfo* ibranch = &b;
+#else
+    BranchInfo* ibranch = &b.second;
+#endif
+    if (ibranch->set && !ibranch->puser) {
+      if (ibranch->unset)
+        (*ibranch->SetDefaultValue) (*this, ibranch,
+#ifdef USE_Vector_BranchInfo
+                                     b.name.c_str()
+#else
+                                     b.first.first.c_str()
+#endif
+                                    );
+      else ibranch->unset = true;
+    }
+  }
+#endif
 
   Int_t nbytes = fTree->Fill();
 
@@ -201,7 +230,7 @@ inline TBranch* TTreeIterator::Branch (const char* name, const char* leaflist, I
     if (fVerbose >= 0) Error (tname<T>("Branch"), "no tree available");
     return nullptr;
   }
-  using V = typename std::remove_reference<T>::type;
+  using V = remove_cvref_t<T>;
   V def = type_default<V>();
   BranchInfo* ibranch = NewBranch<T> (name, std::forward<T>(def), leaflist, bufsize, splitlevel);
   return ibranch->branch;
@@ -210,7 +239,7 @@ inline TBranch* TTreeIterator::Branch (const char* name, const char* leaflist, I
 
 template <typename T>
 inline const T& TTreeIterator::Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
-  using V = typename std::remove_reference<T>::type;
+  using V = remove_cvref_t<T>;
   if (BranchInfo* ibranch = GetBranchInfo<T> (name)) {
     return SetValue<T>(ibranch, name, std::forward<T>(val));
   }
@@ -337,7 +366,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
 
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name) const {
-  using V = typename std::remove_reference<T>::type;
+  using V = remove_cvref_t<T>;
   BranchInfo* ibranch = GetBranchInfo (name, type_code<T>());
   if (!ibranch) return ibranch;
 #ifndef FEWER_CHECKS
@@ -360,8 +389,9 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
 
 template <typename T>
 inline const T& TTreeIterator::SetValue (BranchInfo* ibranch, const char* name, T&& val) {
-  using V = typename std::remove_reference<T>::type;
+  using V = remove_cvref_t<T>;
   if (ibranch->set) {
+    ibranch->unset = false;
 #ifndef OVERRIDE_BRANCH_ADDRESS
     if (!ibranch->puser) {
 #endif
@@ -391,7 +421,7 @@ inline const T& TTreeIterator::SetValue (BranchInfo* ibranch, const char* name, 
 
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
-  using V = typename std::remove_reference<T>::type;
+  using V = remove_cvref_t<T>;
   TBranch* branch = fTree ? fTree->GetBranch(name) : nullptr;
   Long64_t nentries = (branch ? branch->GetEntries() : 0);
   BranchInfo* ibranch;
@@ -459,16 +489,16 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::SetBranchInfo (const char* name, T&& val) const {
 #ifdef USE_Vector_BranchInfo
-  using V = typename std::remove_reference<T>::type;
+  using V = remove_cvref_t<T>;
   BranchInfo* front = &fBranches.front();
-  fBranches.emplace_back (name, type_code<T>(), &TTreeIterator::SetBranchAddressImpl<V>, std::forward<T>(val));
+  fBranches.emplace_back (name, type_code<T>(), std::forward<T>(val), &SetDefaultValue<V>, &SetValueAddress<V>);
   if (front != &fBranches.front()) SetBranchAddressAll("SetBranchInfo");  // vector data() moved
   BranchInfo* ibranch = &fBranches.back();
 #else
 #ifdef USE_MAP_EMPLACE
-  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, type_code<T>()), std::forward_as_tuple(val));
+  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, type_code<T>()), std::forward_as_tuple({val, &SetDefaultValue<V>}));
 #else
-  auto ret = fBranches.insert  ({{name, type_code<T>()}, std::forward<T>(val)});
+  auto ret = fBranches.insert  ({{name, type_code<T>()}, {std::forward<T>(val), &SetDefaultValue<V>}});
 #endif
   BranchInfo* ibranch = &ret.first->second;
 #ifndef FEWER_CHECKS
@@ -515,11 +545,12 @@ inline bool TTreeIterator::SetBranchAddress (BranchInfo* ibranch, const char* na
     }
   }
 #endif
-  return SetBranchAddressImpl<T> (ibranch, name, call);
+  return SetValueAddress<T> (*this, ibranch, name, call);
 }
 
+// this is a static function, so we can store its address without needing a 16-byte member function pointer
 template <typename T>
-inline bool TTreeIterator::SetBranchAddressImpl (BranchInfo* ibranch, const char* name, const char* call, bool redo/*=false*/) const {
+inline /*static*/ bool TTreeIterator::SetValueAddress (const TTreeIterator& tt, BranchInfo* ibranch, const char* name, const char* call, bool redo/*=false*/) {
   T* pvalue= ibranch->GetValuePtr<T>();
   Int_t stat=0;
   void* addr;
@@ -527,19 +558,19 @@ inline bool TTreeIterator::SetBranchAddressImpl (BranchInfo* ibranch, const char
     ibranch->pvalue = pvalue;
     addr = &ibranch->pvalue;
     if (!redo)
-      stat = fTree->SetBranchAddress (name, (T**)(addr));
+      stat = tt.fTree->SetBranchAddress (name, (T**)(addr));
   } else {
     redo=false;  // only helps for objects
     addr = pvalue;
-    stat = fTree->SetBranchAddress (name, pvalue);
+    stat = tt.fTree->SetBranchAddress (name, pvalue);
   }
   if (stat < 0) {
-    if (fVerbose >= 0) Error (tname<T>(call), "failed to set branch '%s' %s address %p", name, (ibranch->isobj?"object":"variable"), addr);
-    ibranch->EnableReset(fVerbose);
+    if (tt.fVerbose >= 0) tt.Error (tname<T>(call), "failed to set branch '%s' %s address %p", name, (ibranch->isobj?"object":"variable"), addr);
+    ibranch->EnableReset(tt.fVerbose);
     ibranch->set = false;
     return false;
   }
-  if   (fVerbose >= 1) Info  (tname<T>(call), "set branch '%s' %s address %p%s",         name, (ibranch->isobj?"object":"variable"), addr, (redo?" (pointer only)":""));
+  if   (tt.fVerbose >= 1) tt.Info  (tname<T>(call), "set branch '%s' %s address %p%s",         name, (ibranch->isobj?"object":"variable"), addr, (redo?" (pointer only)":""));
   ibranch->set = true;
   return true;
 }
@@ -549,12 +580,12 @@ inline bool TTreeIterator::SetBranchAddressImpl (BranchInfo* ibranch, const char
 inline void TTreeIterator::SetBranchAddressAll (const char* call) const {
   if (fVerbose >= 1) Info  (call, "cache reallocated, so need to set all branch addresses again");
   for (auto& b : fBranches) {
-    if (b.SetBranchAddressImpl && b.set
+    if (b.SetValueAddress && b.set
 #ifndef OVERRIDE_BRANCH_ADDRESS
         && !b.puser
 #endif
        ) {
-      (this->*b.SetBranchAddressImpl) (&b, b.name.c_str(), call, true);
+      (*b.SetValueAddress) (*this, &b, b.name.c_str(), call, true);
     }
   }
 }
