@@ -548,6 +548,8 @@ TEST(iterTests4, GetAddr) {
 TEST(iterTests4, PyROOT) {
   TPython::Exec (R"python(
 import ROOT
+ROOT.gROOT.SetBatch(True)
+
 f = ROOT.TFile.Open("xyz.root")
 
 hxy = ROOT.TH2D ("vxy", "vxy", 48, -6, 6, 32, -4, 4);
