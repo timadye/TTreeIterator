@@ -51,6 +51,12 @@ namespace any_namespace = ::std;
 class TTreeIterator : public TNamed {
 public:
 
+  enum EFillStrategy {
+    kUnmanaged = 0,
+    kManaged = 1,   // default
+    kEveryIteration = 2,
+  };
+
   // Interface to std::iterator to allow range-based for loop
   class iterator
     : public std::iterator< std::forward_iterator_tag, // iterator_category   [could easily be random_access_iterator if we implemented the operators]
@@ -83,7 +89,7 @@ public:
   public:
     fill_iterator (TTreeIterator& entry, Long64_t first, Long64_t last) : iterator(entry,first,last) {}
     ~fill_iterator() { fEntry.Write(); }
-    fill_iterator& operator++() { fEntry.Fill(); fIndex++; return *this; }
+    fill_iterator& operator++() { fEntry.Fill(true); fIndex++; return *this; }
     fill_iterator  operator++(int) { fill_iterator it = *this; ++*this; return it; }
     TTreeIterator& operator*() const { return fEntry; }
     fill_iterator begin() { return fill_iterator (fEntry, fIndex, fEnd); }
@@ -153,8 +159,10 @@ public:
   Long64_t GetEntries () const { return fTree ? fTree->GetEntries() : 0; }
   void  SetBufsize    (Int_t bufsize)     { fBufsize    = bufsize;         }
   void  SetSplitlevel (Int_t splitlevel)  { fSplitlevel = splitlevel;      }
+  void  SetFillStrategy (EFillStrategy s) { fFillStrategy = s;             }
   Int_t GetBufsize()    const             { return       fBufsize;         }
   Int_t GetSplitlevel() const             { return       fSplitlevel;      }
+  EFillStrategy GetFillStrategy() const   { return fFillStrategy;          }
 #ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
   void  SetOverrideBranchAddress (bool o) { fOverrideBranchAddress = o;    }
   bool  GetOverrideBranchAddress() const  { return fOverrideBranchAddress; }
@@ -168,7 +176,7 @@ public:
 
   // Forwards to TTree with some extra
   virtual TTreeIterator& GetEntry();
-  virtual Int_t Fill();
+  virtual Int_t Fill (bool canSkip=false);
   Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0) override;
 
   // use a TChain
@@ -371,6 +379,8 @@ protected:
   Int_t fSplitlevel=99;
   int fVerbose=0;
   bool fWriting=false;
+  size_t fNset=0;
+  EFillStrategy fFillStrategy=kManaged;
 #ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
   bool fOverrideBranchAddress=false;
 #endif

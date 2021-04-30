@@ -33,7 +33,7 @@
 #define FULL_CHECKS
 
 const Long64_t nfill1 = 5;
-const Long64_t nfill2 = 4;
+const Long64_t nfill2 = 5;
 const Long64_t nfill22 = 3;
 const double vinit = 42.3;  // fill each element with a different value starting from here
 const double vinit2 = vinit+7*nfill2;
@@ -258,6 +258,7 @@ TEST(iterTests2, FillAddr) {
   tree.Branch("a",&a);
   double v = vinit;  // fill each element with a different value starting from here
   for (Long64_t i = 0; i < nfill2; i++) {
+    if (i == 3) continue;
     if (i==1) {
       auto bs = tree.Branch("s",&ps); ASSERT_TRUE(bs); bs->Fill();
       auto bo = tree.Branch("o",&po); ASSERT_TRUE(bo); bo->Fill();
@@ -287,7 +288,7 @@ TEST(iterTests2, GetAddr) {
 
   std::unique_ptr<TTree> tree (f.Get<TTree>("test"));
   ASSERT_TRUE(tree) << "no tree";
-  EXPECT_EQ(tree->GetEntries(), nfill2);
+  EXPECT_EQ(tree->GetEntries(), nfill2-1);
   double a;
   std::string s, *ps=&s;
   MyStruct3 M;
@@ -332,8 +333,10 @@ TEST(iterTests2, FillIter) {
 
   TTreeIterator iter ("test", &f, verbose);
   double v = vinit;
+  int j = 0;  // just for skipping an entry, since we can't use entry.index()
   for (auto& entry : iter.FillEntries(nfill2)) {
     Long64_t i=entry.index();
+    if (j++ == 3) continue;
     entry["a"] = v++;
     if (i >= 1) entry["s"] = std::string (Form("s:%g",v++));
     if (i >= 2) entry["M"] = MyStruct3(v++,v++,v++,int(v++));
@@ -376,8 +379,8 @@ TEST(iterTests2, GetIter) {
   TTreeIterator iter ("test", &f, verbose);
   ASSERT_TRUE(iter.GetTree()) << "no tree";
   bool only2 = (iter.GetEntries() == nfill2);
-  if (only2) EXPECT_EQ(iter.GetEntries(), nfill2);
-  else       EXPECT_EQ(iter.GetEntries(), nfill2+nfill22);
+  if (only2) EXPECT_EQ(iter.GetEntries(), nfill2-1);
+  else       EXPECT_EQ(iter.GetEntries(), nfill2+nfill22-1);
   double v = vinit;
   for (auto& entry : iter) {
     Long64_t i=entry.index();
@@ -388,7 +391,7 @@ TEST(iterTests2, GetIter) {
     double a = entry["a"];
     Info("GetIter2","Entry %lld: a=%g, s=\"%s\", M=(%g,%g,%g,%d), o=(%g,\"%s\")", i, a, s.c_str(), M.x[0],M.x[1],M.x[2],M.i, o.value,o.GetName());
 #ifdef FULL_CHECKS
-    if (i == nfill2) v = vinit2;
+    if (i == nfill2-1) v = vinit2;
     EXPECT_EQ (a, v++);
     if (i >= 1) EXPECT_EQ (s, std::string (Form("s:%g",v++)));
     else        EXPECT_EQ (s, std::string());
@@ -471,4 +474,94 @@ TEST(iterTests3, GetIter) {
 
     if (i >= 1) break;  // only need to test twice
   }
+}
+
+// ==========================================================================================
+// iterTests4 use TTreeIterator to test simple filling and reading
+// ==========================================================================================
+
+#include "TH2.h"
+#include "TCanvas.h"
+#include "TPython.h"
+
+TEST(iterTests4, FillIter) {
+  TFile file ("xyz.root", "recreate");
+  if (file.IsZombie()) return;
+  gRandom->SetSeed(654321);
+
+  TTreeIterator tree("xyz", &file);
+  for (auto& entry : tree.FillEntries(10000)) {
+    entry["vx"] = gRandom->Gaus(2,3);
+    entry["vy"] = gRandom->Gaus(-1,2);
+    entry["vz"] = gRandom->Gaus(0,100);
+  }
+}
+
+TEST(iterTests4, GetIter) {
+  TFile file ("xyz.root");
+  if (file.IsZombie()) return;
+
+  TH2D hxy ("vxy", "vxy", 48, -6, 6, 32, -4, 4);
+  TH1D hz  ("vz",  "vz",  100, -200, 200);
+
+  TTreeIterator tree("xyz", &file);
+  for (auto& entry : tree) {
+    hxy.Fill (entry.Get<double>("vx"), entry.Get<double>("vy"));
+    hz .Fill (entry["vz"]);
+  }
+
+  TCanvas c1("c1");
+  hxy.Draw("colz");
+  c1.Print("xyz.pdf(");
+  hz.Draw();
+  c1.Print("xyz.pdf)");
+}
+
+TEST(iterTests4, GetAddr) {
+  TFile file ("xyz.root");
+  if (file.IsZombie()) return;
+
+  TH2D hxy ("vxy", "vxy", 48, -6, 6, 32, -4, 4);
+  TH1D hz  ("vz",  "vz",  100, -200, 200);
+
+  std::unique_ptr<TTree> tree (file.Get<TTree>("xyz"));
+
+  double vx, vy, vz;
+  tree->SetBranchAddress("vx",&vx);
+  tree->SetBranchAddress("vy",&vx);  // <-- spot the mistake!
+  tree->SetBranchAddress("vz",&vz);
+  Long64_t n = tree->GetEntries();
+  for (Long64_t i=0; i<n; i++) {
+    tree->GetEntry(i);
+    hxy.Fill (vx, vy);
+    hz .Fill (vz);
+  }
+  tree->ResetBranchAddresses();
+
+  TCanvas c1("c1");
+  hxy.Draw("colz");
+  c1.Print("xyza.pdf(");
+  hz.Draw();
+  c1.Print("xyza.pdf)");
+}
+
+TEST(iterTests4, PyROOT) {
+  TPython::Exec (R"python(
+import ROOT
+f = ROOT.TFile.Open("xyz.root")
+
+hxy = ROOT.TH2D ("vxy", "vxy", 48, -6, 6, 32, -4, 4);
+hz  = ROOT.TH1D ("vz",  "vz",  100, -200, 200);
+
+tree = f.Get("xyz")
+for entry in tree:
+  hxy.Fill (entry.vx, entry.vy)
+  hz .Fill (entry.vz)
+
+c1 = ROOT.TCanvas("c1")
+hxy.Draw("colz");
+c1.Print("xyzp.pdf(");
+hz.Draw();
+c1.Print("xyzp.pdf)");
+)python");
 }

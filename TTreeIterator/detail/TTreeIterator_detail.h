@@ -118,28 +118,35 @@ inline /*static*/ void TTreeIterator::SetDefaultValue (TTreeIterator& tt, Branch
 }
 
 
-inline /*virtual*/ Int_t TTreeIterator::Fill() {
+inline /*virtual*/ Int_t TTreeIterator::Fill (bool canSkip/*=false*/) {
   if (!fTree) return 0;
+  if (canSkip && fNset==0 && fFillStrategy != kEveryIteration) {
+    if (fVerbose >= 2) Info  ("Fill", "No values set for entry %lld - skip Fill", fIndex);
+    return 0;
+  }
 
 #ifndef NO_FILL_UNSET_DEFAULT
-  for (auto& b : fBranches) {
+  if (fFillStrategy != kUnmanaged) {
+    for (auto& b : fBranches) {
 #ifdef USE_Vector_BranchInfo
-    BranchInfo* ibranch = &b;
+      BranchInfo* ibranch = &b;
 #else
-    BranchInfo* ibranch = &b.second;
+      BranchInfo* ibranch = &b.second;
 #endif
-    if (ibranch->set && !ibranch->puser) {
-      if (ibranch->unset)
-        (*ibranch->SetDefaultValue) (*this, ibranch,
+      if (ibranch->set && !ibranch->puser) {
+        if (ibranch->unset)
+          (*ibranch->SetDefaultValue) (*this, ibranch,
 #ifdef USE_Vector_BranchInfo
-                                     b.name.c_str()
+                                       b.name.c_str()
 #else
-                                     b.first.first.c_str()
+                                       b.first.first.c_str()
 #endif
-                                    );
-      else ibranch->unset = true;
+                                      );
+        else ibranch->unset = true;
+      }
     }
   }
+  fNset = 0;
 #endif
 
   Int_t nbytes = fTree->Fill();
@@ -240,6 +247,7 @@ inline TBranch* TTreeIterator::Branch (const char* name, const char* leaflist, I
 template <typename T>
 inline const T& TTreeIterator::Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
   using V = remove_cvref_t<T>;
+  fNset++;
   if (BranchInfo* ibranch = GetBranchInfo<T> (name)) {
     return SetValue<T>(ibranch, name, std::forward<T>(val));
   }
@@ -286,7 +294,7 @@ template <typename T>
 inline /*static*/ const char* TTreeIterator::tname(const char* name/*=0*/) {
   TClass* cl = TClass::GetClass<T>();
   const char* cname = cl ? cl->GetName() : TDataType::GetTypeName (TDataType::GetType(typeid(T)));
-  if (!cname || !*cname) cname = type_name<T>();   // use ROOT's shorter name by preference, but fall back on cxxabi or type_info name 
+  if (!cname || !*cname) cname = type_name<T>();   // use ROOT's shorter name by preference, but fall back on cxxabi or type_info name
   if (!cname || !*cname) return name ? name : "";
   if (!name  || !*name)  return cname;
   static std::string ret;  // keep here so the c_str() is still valid at the end (until the next call).
