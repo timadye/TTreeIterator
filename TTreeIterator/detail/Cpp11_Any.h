@@ -1,9 +1,11 @@
 #ifndef HEADER_Cpp11_Any
 #define HEADER_Cpp11_Any
 
+#ifdef Cpp11_Any_OPTIMIZE
 #define NO_ANY_RTTI 1        // don't use type_info (removes Any::type() method)
 #define ANY_TEMPLATE_OPT 1   // optimise templated Any methods
 #define UNCHECKED_ANY 1      // don't check type of any_cast<T>(any)
+#endif
 
 #ifndef NO_ANY_RTTI
 #include <typeinfo>

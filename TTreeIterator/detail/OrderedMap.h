@@ -122,7 +122,17 @@ public:
 
   template<typename K, typename V> std::pair<iterator, bool>
   emplace (const std::piecewise_construct_t& pc, K&& k, std::tuple<V>&& v) {
-    return vector_insert (map_type::emplace (pc, std::forward<K>(k), std::forward_as_tuple(std::get<0>(v),0)));
+    return vector_insert (map_type::emplace (pc,
+                                             std::forward<K>(k),
+                                             std::forward_as_tuple (std::get<0>(v),0)));
+  }
+
+  template<typename K, typename V1, typename V2> std::pair<iterator, bool>
+  emplace (const std::piecewise_construct_t& pc, K&& k, std::tuple<V1,V2>&& v) {
+    return vector_insert (map_type::emplace (pc,
+                                             std::forward<K>(k),
+                                             std::forward_as_tuple (T(std::forward<V1>(std::get<0>(v)),
+                                                                      std::forward<V2>(std::get<1>(v))), 0)));
   }
 
   std::pair<iterator, bool> emplace (value_type&& val) {

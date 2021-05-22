@@ -18,30 +18,41 @@ class TDirectory;
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define PREFER_PTRPTR 1            // for ROOT objects, tree->Branch() gives **obj, rather than *obj
 //#define NO_FILL_UNSET_DEFAULT 1    // don't set default values if unset
-//#define USE_OrderedMap 1           // BranchInfo container is an OrderedMap from TTreeIterator_helpers.h (otherwise use std::map)
-#define USE_Vector_BranchInfo 1      // BranchInfo container is a std::vector
-#define BranchInfo_STATS 1           // Keep stats for optimised BranchInfo lookup. Prints in ~TTreeIterator if verbose.
-#define USE_Cpp11_Any 1              // use Cpp11::Any from detail/Cpp11_Any.h instead of C++17's std::any
+//#define USE_map 1                  // BranchInfo container is a std::map (otherwise use a std::vector)
+//#define USE_OrderedMap 1           // BranchInfo container is an OrderedMap from TTreeIterator_helpers.h
+//#define NO_BranchInfo_STATS 1      // Don't keep stats for optimised BranchInfo lookup. Otherwise, prints in ~TTreeIterator if verbose.
+//#define USE_any 1                  // use C++17's std::any, instead of Cpp11::Any from detail/Cpp11_Any.h
+//#define Cpp11_Any_NOOPT 1          // don't use Cpp11::Any's optimisations (mostly removing error checking)
 
+#if defined(USE_OrderedMap) && !defined(USE_map)
+# define USE_map 1
+#endif
 
-#if __cplusplus < 201703L            // <version> not available until GCC9, so no way to check __cpp_lib_any without including <any>.
-#define USE_Cpp11_Any 1              // only option is to use Cpp11::Any
+#if defined(USE_any) && (__cplusplus < 201703L)   // <version> not available until GCC9, so no way to check __cpp_lib_any without including <any>.
+# undef USE_any                      // only option is to use Cpp11::Any
+# define Cpp11_Any_NOOPT 1
 #endif
 
 #ifdef USE_OrderedMap
-#ifdef BranchInfo_STATS
-#define OrderedMap_STATS 1
-#endif
-#include "TTreeIterator/detail/OrderedMap.h"
-#else
-#include <map>
+# ifndef NO_BranchInfo_STATS
+#  define OrderedMap_STATS 1
+#  define NO_BranchInfo_STATS 1
+# else
+# endif
+# include "TTreeIterator/detail/OrderedMap.h"
+#elif defined(USE_map)
+# include <map>
+#define NO_BranchInfo_STATS 1
 #endif
 
-#ifdef USE_Cpp11_Any
-#include "TTreeIterator/detail/Cpp11_Any.h"               // Implementation of std::any, compatible with C++11.
+#ifndef USE_any
+# ifndef Cpp11_Any_NOOPT
+#  define Cpp11_Any_OPTIMIZE 1
+# endif
+# include "TTreeIterator/detail/Cpp11_Any.h"  // Implementation of std::any, compatible with C++11.
 using     any_namespace = Cpp11::Any;
 #else
-#include <any>
+# include <any>
 namespace any_namespace = ::std;
 #endif
 
@@ -272,7 +283,7 @@ protected:
 #else
   template <typename K, typename V> using branch_map_type = std::map<K,V>;
 #endif
-#ifdef USE_Cpp11_Any
+#ifndef USE_any
   using any_type = Cpp11::Any;
   using type_code_t = any_namespace::Any_type_code;
   template<typename T> static constexpr type_code_t type_code() { return any_namespace::type_code<T>(); }
@@ -291,7 +302,7 @@ protected:
 
   // Our local cache of branch information
   struct BranchInfo {
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
     std::string  name;
     type_code_t  type;
 #endif
@@ -302,7 +313,7 @@ protected:
 #endif
     TBranch* branch = nullptr;
     SetDefaultValue_t SetDefaultValue = 0;  // function to set value to the default
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
     SetValueAddress_t SetValueAddress = 0;  // function to set the address again
 #endif
     bool     set    = false;
@@ -321,7 +332,7 @@ protected:
 #endif
          ) branch->ResetAddress();
     }
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
     template <typename T> BranchInfo(const char* nam, type_code_t typ, T&& val, SetDefaultValue_t fd, SetValueAddress_t fa)
       : name(nam), type(typ), value (std::forward<T>(val)), SetDefaultValue(fd), SetValueAddress(fa) {}
 #else
@@ -350,7 +361,7 @@ protected:
   static void SetBranchStatus (TObjArray* list, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void SetBranchStatus (TBranch* branch, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void BranchNames (std::vector<std::string>& allbranches, TObjArray* list, bool include_children, bool include_inactive, const std::string& pre="");
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
   void SetBranchAddressAll (const char* call="SetBranchInfo") const;
 #endif
 
@@ -363,11 +374,11 @@ protected:
   // Member variables
   Long64_t fIndex=0;
   mutable ULong64_t fTotFill=0, fTotWrite=0, fTotRead=0;
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
   mutable std::vector<BranchInfo> fBranches;
   mutable std::vector<BranchInfo>::iterator fLastBranch;
   mutable bool fTryLast = false;
-#ifdef BranchInfo_STATS
+#ifndef NO_BranchInfo_STATS
   mutable size_t nhits=0, nmiss=0;
 #endif
 #else

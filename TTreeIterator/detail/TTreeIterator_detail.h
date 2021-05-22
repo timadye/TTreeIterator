@@ -9,11 +9,13 @@
 #include "TFile.h"
 #include "TChain.h"
 
+#ifdef USE_map
 #define USE_MAP_EMPLACE 1  // use map::emplace instead of map::insert, which is probably a good idea but probably makes little difference
+#endif
 
 
 inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=true*/) {
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
   fBranches.reserve (200);   // when we reallocate, SetBranchAddress will be invalidated so have to fix up each time
 #endif
   if (!owned) {
@@ -73,7 +75,7 @@ inline Int_t TTreeIterator::Add (const char* name, Long64_t nentries/*=TTree::kM
 inline TTreeIterator::~TTreeIterator() /*override*/ {
   if (fTreeOwned) delete fTree;
   if (fVerbose >= 1) {
-#ifdef BranchInfo_STATS
+#ifndef NO_BranchInfo_STATS
     if (nhits || nmiss)
       Info ("TTreeIterator", "GetBranchInfo optimisation had %lu hits, %lu misses, %.1f%% success rate", nhits, nmiss, double(100*nhits)/double(nhits+nmiss));
 #endif
@@ -128,7 +130,7 @@ inline /*virtual*/ Int_t TTreeIterator::Fill (bool canSkip/*=false*/) {
 #ifndef NO_FILL_UNSET_DEFAULT
   if (fFillStrategy != kUnmanaged) {
     for (auto& b : fBranches) {
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
       BranchInfo* ibranch = &b;
 #else
       BranchInfo* ibranch = &b.second;
@@ -136,7 +138,7 @@ inline /*virtual*/ Int_t TTreeIterator::Fill (bool canSkip/*=false*/) {
       if (ibranch->set && !ibranch->puser) {
         if (ibranch->unset)
           (*ibranch->SetDefaultValue) (*this, ibranch,
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
                                        b.name.c_str()
 #else
                                        b.first.first.c_str()
@@ -185,12 +187,12 @@ inline Int_t TTreeIterator::Write (const char* name/*=0*/, Int_t option/*=0*/, I
 
 inline /*virtual*/ void TTreeIterator::reset() {
   fIndex = 0;
-#if defined(USE_Vector_BranchInfo) || (defined(USE_OrderedMap) && defined(__cpp_lib_make_reverse_iterator))
+#if !defined(USE_map) || (defined(USE_OrderedMap) && defined(__cpp_lib_make_reverse_iterator))
   for (auto it = fBranches.rbegin(); it != fBranches.rend(); ++it) {
 #else
   for (auto it = fBranches. begin(); it != fBranches. end(); ++it) {
 #endif
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
     BranchInfo& ibranch = *it;
 #else
     BranchInfo& ibranch = it->second;
@@ -339,13 +341,13 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranch(const char* name) con
 
 
 inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name, type_code_t type) const {
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
   if (fTryLast) {
     ++fLastBranch;
     if (fLastBranch == fBranches.end()) fLastBranch = fBranches.begin();
     BranchInfo& b = *fLastBranch;
     if (b.type == type && b.name == name) {
-#ifdef BranchInfo_STATS
+#ifndef NO_BranchInfo_STATS
       ++nhits;
 #endif
       return &b;
@@ -357,7 +359,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
     if (b.type == type && b.name == name) {
       fTryLast = true;
       fLastBranch = ib;
-#ifdef BranchInfo_STATS
+#ifndef NO_BranchInfo_STATS
       ++nmiss;
 #endif
       return &b;
@@ -497,15 +499,15 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
 
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::SetBranchInfo (const char* name, T&& val) const {
-#ifdef USE_Vector_BranchInfo
   using V = remove_cvref_t<T>;
+#ifndef USE_map
   BranchInfo* front = &fBranches.front();
   fBranches.emplace_back (name, type_code<T>(), std::forward<T>(val), &SetDefaultValue<V>, &SetValueAddress<V>);
   if (front != &fBranches.front()) SetBranchAddressAll("SetBranchInfo");  // vector data() moved
   BranchInfo* ibranch = &fBranches.back();
 #else
 #ifdef USE_MAP_EMPLACE
-  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, type_code<T>()), std::forward_as_tuple({val, &SetDefaultValue<V>}));
+  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, type_code<T>()), std::forward_as_tuple(std::forward<T>(val), &SetDefaultValue<V>));
 #else
   auto ret = fBranches.insert  ({{name, type_code<T>()}, {std::forward<T>(val), &SetDefaultValue<V>}});
 #endif
@@ -585,7 +587,7 @@ inline /*static*/ bool TTreeIterator::SetValueAddress (const TTreeIterator& tt, 
 }
 
 
-#ifdef USE_Vector_BranchInfo
+#ifndef USE_map
 inline void TTreeIterator::SetBranchAddressAll (const char* call) const {
   if (fVerbose >= 1) Info  (call, "cache reallocated, so need to set all branch addresses again");
   for (auto& b : fBranches) {

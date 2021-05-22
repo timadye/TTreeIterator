@@ -17,7 +17,7 @@ struct LimitedEventListener : public testing::TestEventListener {
     nfail = 0;
     testing::internal::ColoredPrintf(testing::internal::COLOR_GREEN,  "[ RUN      ] ");
     printf("%s.%s", test_info.test_case_name(), test_info.name());
-    if (maxmsg>=0) printf(" (stopping after %d failures)", maxmsg);
+//  if (maxmsg>=0) printf(" (stopping after %d failures)", maxmsg);
     printf("\n");
     fflush(stdout);
   }
@@ -64,7 +64,7 @@ private:
 class MyEnvironment : public ::testing::Environment {
 protected:
   void SetUp() override {
-    printf ("replace default_result_printer with our LimitedEventListener\n");
+//  printf ("replace default_result_printer with our LimitedEventListener\n");
     fflush(stdout);
     ::testing::TestEventListeners& listeners = testing::UnitTest::GetInstance()->listeners();
     ::testing::TestEventListener* default_listener = listeners.Release (listeners.default_result_printer());

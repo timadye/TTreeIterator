@@ -1,9 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <fstream>
+#include <iostream>
+#include <iomanip>
+#include <cmath>
+#include <ctime>
 
 #include "TSystem.h"
 #include "TError.h"
+#include "TStopwatch.h"
 #include "TFile.h"
 #include "TTree.h"
 #include "TTreeReader.h"
@@ -17,23 +23,33 @@
 // Test configuration
 // ==========================================================================================
 
-#define DO_TEST1
-#define DO_TEST2
-#define DO_TEST3
-#define DO_ITER
-#define DO_ADDR
-#define DO_FILL
-#define DO_GET
-#define FULL_CHECKS
+//#define NO_TEST1
+#define NO_TEST2
+//#define NO_TEST3
+//#define NO_ITER
+//#define NO_ADDR
+//#define NO_FILL
+//#define NO_GET
+//#define FAST_CHECKS
 
-const Long64_t nfill1 = 500000;
-const Long64_t nfill2 = 500000;
-const Long64_t nfill3 = 500000;
-constexpr size_t nx1 = 100;
-constexpr size_t nx2 = 100;
-constexpr size_t nx3 = 100;
+#ifndef NFILL
+#define NFILL 500000
+#endif
+#ifndef NX
+#define NX 100
+#endif
+#ifndef VERBOSE
+#define VERBOSE 0
+#endif
+
+const Long64_t nfill1 = NFILL;
+const Long64_t nfill2 = NFILL;
+const Long64_t nfill3 = NFILL;
+constexpr size_t nx1 = NX;
+constexpr size_t nx2 = NX;
+constexpr size_t nx3 = NX;
 const double vinit = 42.3;  // fill each element with a different value starting from here
-const int verbose = 1;
+const int verbose = VERBOSE;
 int LimitedEventListener::maxmsg = 10;
 
 // ==========================================================================================
@@ -41,28 +57,28 @@ int LimitedEventListener::maxmsg = 10;
 // ==========================================================================================
 
 // Disable tests not selected above
-#ifndef DO_TEST1
+#ifdef NO_TEST1
 #define timingTests1 DISABLED_timingTests1
 #endif
-#ifndef DO_TEST2
+#ifdef NO_TEST2
 #define timingTests2 DISABLED_timingTests2
 #endif
-#ifndef DO_TEST3
+#ifdef NO_TEST3
 #define timingTests3 DISABLED_timingTests3
 #endif
-#ifndef DO_ITER
+#ifdef NO_ITER
 #define FillIter DISABLED_FillIter
 #define GetIter  DISABLED_GetIter
 #endif
-#ifndef DO_ADDR
+#ifdef NO_ADDR
 #define FillAddr DISABLED_FillAddr
 #define GetAddr  DISABLED_GetAddr
 #endif
-#ifndef DO_FILL
+#ifdef NO_FILL
 #define FillIter DISABLED_FillIter
 #define FillAddr DISABLED_FillAddr
 #endif
-#ifndef DO_GET
+#ifdef NO_GET
 #define GetIter  DISABLED_GetIter
 #define GetAddr  DISABLED_GetAddr
 #define GetReader DISABLED_GetReader
@@ -76,6 +92,55 @@ Int_t ShowBranches (const TFile& file, TTree* tree, const std::string& branch_ty
           file.GetName(), tree->GetName(), op, tree->GetEntries(), nbranches, branch_type.c_str());
   return nbranches;
 }
+
+class StartTimer : public TStopwatch {
+  TTree* fTree = 0;
+  bool fFill = false;
+  ULong64_t fNElements = 1;
+  bool fPrinted = false;
+public:
+  StartTimer(TTree* tree=0, bool fill=false, ULong64_t nelem=1) : TStopwatch(), fTree(tree), fFill(fill), fNElements(nelem) {}
+  ~StartTimer() override { if (!fPrinted) PrintResults(); }
+
+  void PrintResults() {
+    auto realTime = RealTime();
+    auto  cpuTime =  CpuTime();
+    auto now = std::time(0);
+
+    const char* filename = gSystem->Getenv("TIMELOG");
+    const char* label    = gSystem->Getenv("LABEL");
+    if (!filename || !*filename) filename = "timingTests.csv";
+    if (!label) label = "";
+    char stamp[22];
+    std::strftime (stamp, sizeof(stamp), "%Y-%m-%d-%H:%M:%S", std::localtime(&now));
+    const testing::TestInfo* const test_info = testing::UnitTest::GetInstance()->current_test_info();
+
+    std::ofstream of (filename, std::ios::app);
+    if (of.tellp() == 0) {
+      of << "time/C,host/C,label/C,testcase/C,test/C,fill/B,entries/L,branches/I,elements/l,ms/D,cpu/D\n";
+    }
+
+    std::ostringstream oss;
+    std::ostream& os = ((verbose >= 1) ? static_cast<std::ostream&>(oss) : static_cast<std::ostream&>(of));
+    os << stamp
+       << ',' << gSystem->HostName()
+       << ',' << label
+       << ',' << test_info->test_case_name()
+       << ',' << test_info->name()
+       << ',' << (fTree                               ? fTree->GetEntries()                      : 0)
+       << ',' << (fTree && fTree->GetListOfBranches() ? fTree->GetListOfBranches()->GetEntries() : 1)
+       << ',' << fNElements
+       << ',' << std::llround (realTime*1000.0)
+       << ',' << std::llround ( cpuTime*1000.0)
+       << '\n';
+    if (verbose >= 1) {
+      std::cout << oss.str();
+      of        << oss.str();
+    }
+    Continue();
+    fPrinted = true;
+  }
+};
 
 // ==========================================================================================
 // TTreeIterator test 1: write/read a bunch of doubles
@@ -92,6 +157,7 @@ TEST(timingTests1, FillIter) {
   for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
 
   TTreeIterator iter ("test", verbose);
+  StartTimer timer (iter.GetTree(), true);
   double v = vinit;
   for (auto& entry : iter.FillEntries(nfill1)) {
     for (auto& b : bnames) entry[b.c_str()] = v++;
@@ -104,22 +170,24 @@ TEST(timingTests1, GetIter) {
   TFile file ("test_timing1.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
+  std::vector<std::string> bnames;
+  bnames.reserve(nx1);
+  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
+
   TTreeIterator iter ("test", &file, verbose);
   ASSERT_TRUE(iter.GetTree()) << "no tree";
   EXPECT_EQ(iter.GetEntries(), nfill1);
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type1);
   EXPECT_EQ(nbranches, nx1);
 
-  std::vector<std::string> bnames;
-  bnames.reserve(nx1);
-  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
+  StartTimer timer (iter.GetTree());
 
   double v = vinit, vsum=0.0;
   for (auto& entry : iter) {
     for (auto& b : bnames) {
       double x = entry[b.c_str()];
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",iter.index(),b.c_str());
 #endif
     }
@@ -136,33 +204,34 @@ TEST(timingTests1, FillAddr) {
   TFile file ("test_timing1.root", "recreate");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  auto tree = new TTree("test","");
+  TTree tree("test","");
   std::vector<double> vals(nx1);
-  for (int i=0; i<nx1; i++) tree->Branch (Form("x%03d",i), &vals[i]);
+  StartTimer timer (&tree, true);
+  for (int i=0; i<nx1; i++) tree.Branch (Form("x%03d",i), &vals[i]);
 
   double v = vinit;
   for (Long64_t i = 0; i < nfill1; i++) {
     for (auto& x : vals) x = v++;
-    tree->Fill();
+    tree.Fill();
   }
   file.Write();
 
-  Int_t nbranches = ShowBranches (file, tree, branch_type1, "filled");
+  Int_t nbranches = ShowBranches (file, &tree, branch_type1, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill1), v);
-  delete tree;
 }
 
 TEST(timingTests1, GetAddr) {
   TFile file ("test_timing1.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  auto tree = file.Get<TTree>("test");
+  std::unique_ptr<TTree> tree (file.Get<TTree>("test"));
   ASSERT_TRUE(tree) << "no tree";
   EXPECT_EQ(tree->GetEntries(), nfill1);
-  Int_t nbranches = ShowBranches (file, tree, branch_type1);
+  Int_t nbranches = ShowBranches (file, tree.get(), branch_type1);
   EXPECT_EQ(nbranches, nx1);
 
   std::vector<double> vals(nx1);
+  StartTimer timer (tree.get());
   for (int i=0; i<nx1; i++) tree->SetBranchAddress (Form("x%03d",i), &vals[i]);
 
   double v = vinit, vsum=0.0;
@@ -172,12 +241,11 @@ TEST(timingTests1, GetAddr) {
     for (auto& vx : vals) {
       double x = vx;
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vals.data());
 #endif
     }
   }
-  delete tree;
   double vn = double(nbranches*nfill1);
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
@@ -196,6 +264,7 @@ TEST(timingTests1, GetReader) {
   Int_t nbranches = ShowBranches (file, reader.GetTree(), branch_type1);
   EXPECT_EQ(nbranches, nx1);
 
+  StartTimer timer (reader.GetTree());
   std::vector<TTreeReaderValue<Double_t>> vals;
   vals.reserve(nx1);
   for (int i=0; i<nx1; i++)
@@ -206,7 +275,7 @@ TEST(timingTests1, GetReader) {
     for (auto& vx : vals) {
       double x = *vx;
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",reader.GetCurrentEntry(),vx.GetBranchName());
 #endif
     }
@@ -232,6 +301,7 @@ TEST(timingTests2, FillIter) {
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
   TTreeIterator iter ("test", verbose);
+  StartTimer timer (iter.GetTree(), true, nx2);
   double v = vinit;
   for (auto& entry : iter.FillEntries(nfill2)) {
     MyStruct M;
@@ -253,12 +323,13 @@ TEST(timingTests2, GetIter) {
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type2);
   EXPECT_EQ(nbranches, 1);
 
+  StartTimer timer (iter.GetTree(), nx2);
   double v = vinit, vsum=0.0;
   for (auto& entry : iter) {
     const MyStruct& M = entry["M"];
     for (auto& x : M.x) {
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %d",iter.index(),&x-&M.x[0]);
 #endif
     }
@@ -276,19 +347,19 @@ TEST(timingTests2, FillAddr) {
   TFile file ("test_timing2.root", "recreate");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  auto tree = new TTree("test","");
+  TTree tree("test","");
   MyStruct M;
-  tree->Branch ("M", &M, TTreeIterator::GetLeaflist<MyStruct>());
+  StartTimer timer (&tree, true, nx2);
+  tree.Branch ("M", &M, TTreeIterator::GetLeaflist<MyStruct>());
   double v = vinit;
   for (Long64_t i = 0; i < nfill2; i++) {
     for (auto& x : M.x) x = v++;
-    tree->Fill();
+    tree.Fill();
   }
   file.Write();
 
-  Int_t nbranches = ShowBranches (file, tree, branch_type2, "filled");
+  Int_t nbranches = ShowBranches (file, &tree, branch_type2, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill2*nx2), v);
-  delete tree;
 }
 
 TEST(timingTests2, GetAddr) {
@@ -296,13 +367,14 @@ TEST(timingTests2, GetAddr) {
   TFile file ("test_timing2.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  auto tree = file.Get<TTree>("test");
+  std::unique_ptr<TTree> tree (file.Get<TTree>("test"));
   ASSERT_TRUE(tree) << "no tree";
   EXPECT_EQ(tree->GetEntries(), nfill2);
-  Int_t nbranches = ShowBranches (file, tree, branch_type2);
+  Int_t nbranches = ShowBranches (file, tree.get(), branch_type2);
   EXPECT_EQ(nbranches, 1);
 
   MyStruct M;
+  StartTimer timer (tree.get(), nx2);
   tree->SetBranchAddress ("M", &M);
   double v = vinit, vsum=0.0;
   Long64_t n = tree->GetEntries();
@@ -310,12 +382,11 @@ TEST(timingTests2, GetAddr) {
     tree->GetEntry(i);
     for (auto& x : M.x) {
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-&M.x[0]);
 #endif
     }
   }
-  delete tree;
   double vn = double(nbranches*nfill2*nx2);
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
@@ -335,6 +406,7 @@ TEST(timingTests2, GetReader) {
   Int_t nbranches = ShowBranches (file, reader.GetTree(), branch_type2);
   EXPECT_EQ(nbranches, 1);
 
+  StartTimer timer (reader.GetTree(), nx2);
   TTreeReaderArray<Double_t> vals(reader, "M.x");
 
   double v = vinit, vsum=0.0;
@@ -343,7 +415,7 @@ TEST(timingTests2, GetReader) {
     for (size_t i=0; i<n; i++) {
       double x = vals[i];
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %zu",reader.GetCurrentEntry(),i);
 #endif
     }
@@ -363,6 +435,7 @@ TEST(timingTests3, FillIter) {
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
   TTreeIterator iter ("test", verbose);
+  StartTimer timer (iter.GetTree(), true);
   double v = vinit;
   for (auto& entry : iter.FillEntries(nfill3)) {
     std::vector<double> vx(nx3);
@@ -383,13 +456,14 @@ TEST(timingTests3, GetIter) {
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type3);
   EXPECT_EQ(nbranches, 1);
 
+  StartTimer timer (iter.GetTree());
   double v = vinit, vsum=0.0;
   for (auto& entry : iter) {
     const std::vector<double>& vx = entry["vx"];
     EXPECT_EQ (vx.size(), nx3);
     for (auto& x : vx) {
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %d",iter.index(),&x-vx.data());
 #endif
     }
@@ -407,34 +481,35 @@ TEST(timingTests3, FillAddr) {
   TFile file ("test_timing3.root", "recreate");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  auto tree = new TTree("test","");
+  TTree tree("test","");
   std::vector<double>* vx = 0;
-  tree->Branch ("vx", &vx);
+  StartTimer timer (&tree, true);
+  tree.Branch ("vx", &vx);
   double v = vinit;
   for (Long64_t i = 0; i < nfill3; i++) {
     ASSERT_TRUE(vx);
     vx->clear();
     for (size_t i=0; i<nx3; i++) vx->push_back(v++);
-    tree->Fill();
+    tree.Fill();
   }
   file.Write();
 
-  Int_t nbranches = ShowBranches (file, tree, branch_type3, "filled");
+  Int_t nbranches = ShowBranches (file, &tree, branch_type3, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill3*nx3), v);
-  delete tree;
 }
 
 TEST(timingTests3, GetAddr) {
   TFile file ("test_timing3.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  auto tree = file.Get<TTree>("test");
+  std::unique_ptr<TTree> tree (file.Get<TTree>("test"));
   ASSERT_TRUE(tree) << "no tree";
   EXPECT_EQ(tree->GetEntries(), nfill3);
-  Int_t nbranches = ShowBranches (file, tree, branch_type3);
+  Int_t nbranches = ShowBranches (file, tree.get(), branch_type3);
   EXPECT_EQ(nbranches, 1);
 
   std::vector<double>* vx = 0;
+  StartTimer timer (tree.get());
   tree->SetBranchAddress ("vx", &vx);
   double v = vinit, vsum=0.0;
   Long64_t n = tree->GetEntries();
@@ -443,12 +518,11 @@ TEST(timingTests3, GetAddr) {
     EXPECT_EQ (vx->size(), nx3);
     for (auto& x : *vx) {
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vx->data());
 #endif
     }
   }
-  delete tree;
   double vn = double(nbranches*nfill3*nx3);
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
@@ -467,6 +541,7 @@ TEST(timingTests3, GetReader) {
   Int_t nbranches = ShowBranches (file, reader.GetTree(), branch_type3);
   EXPECT_EQ(nbranches, 1);
 
+  StartTimer timer (reader.GetTree());
   TTreeReaderArray<Double_t> vals(reader, "vx");
 
   double v = vinit, vsum=0.0;
@@ -475,7 +550,7 @@ TEST(timingTests3, GetReader) {
     for (size_t i=0; i<n; i++) {
       double x = vals[i];
       vsum += x;
-#ifdef FULL_CHECKS
+#ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %zu",reader.GetCurrentEntry(),i);
 #endif
     }
