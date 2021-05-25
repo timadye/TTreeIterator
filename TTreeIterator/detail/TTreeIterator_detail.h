@@ -135,7 +135,11 @@ inline /*virtual*/ Int_t TTreeIterator::Fill (bool canSkip/*=false*/) {
 #else
       BranchInfo* ibranch = &b.second;
 #endif
-      if (ibranch->set && !ibranch->puser) {
+      if (ibranch->set
+#ifndef OVERRIDE_BRANCH_ADDRESS
+          && !ibranch->puser
+#endif
+         ) {
         if (ibranch->unset)
           (*ibranch->SetDefaultValue) (*this, ibranch,
 #ifndef USE_map

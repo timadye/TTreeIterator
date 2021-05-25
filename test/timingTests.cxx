@@ -23,14 +23,14 @@
 // Test configuration
 // ==========================================================================================
 
-//#define NO_TEST1
-#define NO_TEST2
-//#define NO_TEST3
-//#define NO_ITER
-//#define NO_ADDR
-//#define NO_FILL
-//#define NO_GET
-//#define FAST_CHECKS
+//#define NO_TEST1 1
+//#define NO_TEST2 1
+//#define NO_TEST3 1
+//#define NO_ITER 1
+//#define NO_ADDR 1
+//#define NO_FILL 1
+//#define NO_GET 1
+//#define FAST_CHECKS 1
 
 #ifndef NFILL
 #define NFILL 500000
@@ -127,6 +127,7 @@ public:
        << ',' << label
        << ',' << test_info->test_case_name()
        << ',' << test_info->name()
+       << ',' << fFill
        << ',' << (fTree                               ? fTree->GetEntries()                      : 0)
        << ',' << (fTree && fTree->GetListOfBranches() ? fTree->GetListOfBranches()->GetEntries() : 1)
        << ',' << fNElements
@@ -179,6 +180,48 @@ TEST(timingTests1, GetIter) {
   EXPECT_EQ(iter.GetEntries(), nfill1);
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type1);
   EXPECT_EQ(nbranches, nx1);
+
+  StartTimer timer (iter.GetTree());
+
+  double v = vinit, vsum=0.0;
+  for (auto& entry : iter) {
+    for (auto& b : bnames) {
+      double x = entry[b.c_str()];
+      vsum += x;
+#ifndef FAST_CHECKS
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",iter.index(),b.c_str());
+#endif
+    }
+  }
+  double vn = double(nbranches*nfill1);
+  EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
+}
+
+TEST(timingTests1, GetIter2) {
+  TFile file ("test_timing1.root");
+  ASSERT_FALSE(file.IsZombie()) << "no file";
+
+  std::vector<std::string> bnames;
+  bnames.reserve(nx1);
+  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
+
+  TTreeIterator iter ("test", &file, verbose);
+  ASSERT_TRUE(iter.GetTree()) << "no tree";
+  EXPECT_EQ(iter.GetEntries(), nfill1);
+  Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type1);
+  EXPECT_EQ(nbranches, nx1);
+
+  // read once in reverse order for slowest access later
+  {
+    double vsum=0.0;
+    auto& entry = *iter.begin();
+    for (std::ptrdiff_t i = nx1-1; i >= 0; --i) {
+      double x = entry[bnames[i].c_str()];
+      vsum += x;
+    }
+    double vn = double(nbranches);
+    EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
+  }
 
   StartTimer timer (iter.GetTree());
 
