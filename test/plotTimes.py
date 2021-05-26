@@ -21,12 +21,18 @@ def parseArgs():
     opt.output = r + ".pdf"
   return opt, args
 
+def flat(L):
+# if we had a mix of values and lists, then we would need this:
+#   return [u for v in [[y for y in x] if type(x) is list else [x] for x in L] for u in v]
+  return [u for v in L for u in v]
+
 def process ():
   opt, args = parseArgs()
   if not opt.interactive: ROOT.gROOT.SetBatch(True)
   ROOT.TH1.AddDirectory(0)
   legends = opt.legends.split(",") if opt.legends else []
   trees = []
+  nfiles = []
   add=False
   i = 0
   for f in args:
@@ -39,8 +45,10 @@ def process ():
       leg = legends[i] if legends and i<len(legends) else f
       tree = ROOT.TTree ("times_%d" % i, leg)
       trees.append(tree)
+      nfiles.append(1)
       n = tree.ReadFile(f,"",",")
     else:
+      nfiles[-1] += 1
       # skip header line
       fs = ROOT.std.ifstream(f)
       while True:
@@ -50,35 +58,46 @@ def process ():
       del fs
     if not n: return 1
     print ("read %d entries from file %s into tree '%s' with legend '%s'" % (n, f, tree.GetName(), tree.GetTitle()))
+
   nt = len(trees)
   sf = 1.0 / float(nt)
-  w = min (0.45, 0.55*sf)
+  w = min (0.45, 0.65*sf)
   ROOT.gStyle.SetPaintTextFormat(".0f")
   ROOT.gStyle.SetTickLength(0.0)
   ROOT.gStyle.SetErrorX(0)
   ROOT.gStyle.SetOptTitle(0)
-  tree0 = trees[0]
-  tree0.Draw("label","","goff")
-  h0 = tree0.GetHistogram()
-  if not h0:
-    print ("element 'label' not found in '%s'" % tree0.GetName())
-    return 2
-  ax0 = h0.GetXaxis()
-  labels = [(i,ax0.GetBinLabel(i)) for i in range(1,ax0.GetNbins()+1)]
+
+  labels = []
+  for tree in trees:
+    tree.Draw("label","","goff")
+    h = tree.GetHistogram()
+    if not h:
+      print ("element 'label' not found in '%s'" % tree.GetName())
+      return 2
+    ax = h.GetXaxis()
+    for i in range(ax.GetNbins()):
+      lab = ax.GetBinLabel(i+1)
+      if lab not in flat(labels):
+        if i>=len(labels):
+          labels.append([lab])
+        else:
+          labels[i].append(lab)
+  labels = flat(labels)
 
   hists = []
   for i,tree in enumerate(trees):
     h = ROOT.TProfile ("hist_%d" % i, "%s;;ns / double" % tree.GetTitle(), len(labels), 0.0, float(len(labels)))
     hists.append(h)
     ax = h.GetXaxis()
-    for b,label in labels:
-      ax.SetBinLabel (b, label)
+    for b,label in enumerate(labels):
+      ax.SetBinLabel (b+1, label)
     h.SetStats(0)
     h.SetMinimum(0.0)
     h.SetBarWidth(w)
     h.SetMarkerSize (min (1.0, 3.5*w))
-    h.SetBarOffset(0.3 + 1.3*w*i)
+    h.SetBarOffset(0.2 + 1.2*w*i)
     h.SetFillColor(cols[i%len(cols)])
+    h.GetYaxis().SetTickLength(0.02)
     for e in tree:
       nval = e.entries * e.branches * e.elements
       print ("%s %s %s %-20s %s %-10s %1s %d %d %d %5g %5g (%d)" %
@@ -89,12 +108,12 @@ def process ():
       h.Fill (e.label, 1000000.0 * e.ms / float(nval))
 
   if legends:
-    leg = ROOT.TLegend (0.8,0.85,0.9,0.9)
+    leg = ROOT.TLegend (0.7,0.9-0.025*nt,0.9,0.9)
     leg.SetFillStyle(0)
   for i,h in enumerate(hists):
     ax = h.GetXaxis()
     for b in range(1,h.GetNbinsX()+1):
-      print ("%-10s %-20s %5.1f%s ns/double" % (h.GetTitle(), ax.GetBinLabel(b), h.GetBinContent(b), (" +/- %3.1f" % h.GetBinError(b)) if nt>=2 else ""))
+      print ("%-10s %-20s %5.1f%s ns/double" % (h.GetTitle(), ax.GetBinLabel(b), h.GetBinContent(b), (" +/- %4.1f" % h.GetBinError(b)) if nfiles[i]>=2 else ""))
     if not i: h.Draw("bar text0")
     else:     h.Draw("bar text0 same")
     if legends and i<len(legends): leg.AddEntry(h,legends[i],"f")

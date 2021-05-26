@@ -144,7 +144,7 @@ public:
 };
 
 // ==========================================================================================
-// TTreeIterator test 1: write/read a bunch of doubles
+// timing test 1: write/read a bunch of doubles
 // ==========================================================================================
 
 const std::string branch_type1 = "double";
@@ -239,9 +239,6 @@ TEST(timingTests1, GetIter2) {
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
 
-// ==========================================================================================
-// TTree test 1: write/read a bunch of doubles
-// ==========================================================================================
 
 TEST(timingTests1, FillAddr) {
   TFile file ("test_timing1.root", "recreate");
@@ -293,9 +290,6 @@ TEST(timingTests1, GetAddr) {
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
 
-// ==========================================================================================
-// TTreeReader test 1: read a bunch of doubles
-// ==========================================================================================
 
 TEST(timingTests1, GetReader) {
   TFile file ("test_timing1.root");
@@ -328,7 +322,7 @@ TEST(timingTests1, GetReader) {
 }
 
 // ==========================================================================================
-// TTreeIterator test 2: write/read a bunch of doubles in a POD class
+// timing test 2: write/read a bunch of doubles in a POD class
 // ==========================================================================================
 
 // A simple user-defined POD class
@@ -366,7 +360,7 @@ TEST(timingTests2, GetIter) {
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type2);
   EXPECT_EQ(nbranches, 1);
 
-  StartTimer timer (iter.GetTree(), nx2);
+  StartTimer timer (iter.GetTree(), false, nx2);
   double v = vinit, vsum=0.0;
   for (auto& entry : iter) {
     const MyStruct& M = entry["M"];
@@ -381,9 +375,6 @@ TEST(timingTests2, GetIter) {
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
 
-// ==========================================================================================
-// TTree test 2: write/read a bunch of doubles in a POD class
-// ==========================================================================================
 
 TEST(timingTests2, FillAddr) {
   ASSERT_EQ (sizeof(MyStruct::x)/sizeof(MyStruct::x[0]), nx2);
@@ -417,7 +408,7 @@ TEST(timingTests2, GetAddr) {
   EXPECT_EQ(nbranches, 1);
 
   MyStruct M;
-  StartTimer timer (tree.get(), nx2);
+  StartTimer timer (tree.get(), false, nx2);
   tree->SetBranchAddress ("M", &M);
   double v = vinit, vsum=0.0;
   Long64_t n = tree->GetEntries();
@@ -435,10 +426,6 @@ TEST(timingTests2, GetAddr) {
 }
 
 
-// ==========================================================================================
-// TTreeReader test 2: read a bunch of doubles in a POD class
-// ==========================================================================================
-
 TEST(timingTests2, GetReader) {
   TFile file ("test_timing2.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
@@ -449,7 +436,7 @@ TEST(timingTests2, GetReader) {
   Int_t nbranches = ShowBranches (file, reader.GetTree(), branch_type2);
   EXPECT_EQ(nbranches, 1);
 
-  StartTimer timer (reader.GetTree(), nx2);
+  StartTimer timer (reader.GetTree(), false, nx2);
   TTreeReaderArray<Double_t> vals(reader, "M.x");
 
   double v = vinit, vsum=0.0;
@@ -467,8 +454,9 @@ TEST(timingTests2, GetReader) {
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
 
+
 // ==========================================================================================
-// TTreeIterator test 3: write/read a vector of doubles
+// timing test 3: write/read a vector of doubles
 // ==========================================================================================
 
 const std::string branch_type3 = Form("std::vector<double>(%d)",int(nx3));
@@ -478,7 +466,7 @@ TEST(timingTests3, FillIter) {
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
   TTreeIterator iter ("test", verbose);
-  StartTimer timer (iter.GetTree(), true);
+  StartTimer timer (iter.GetTree(), true, nx3);
   double v = vinit;
   for (auto& entry : iter.FillEntries(nfill3)) {
     std::vector<double> vx(nx3);
@@ -499,7 +487,7 @@ TEST(timingTests3, GetIter) {
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type3);
   EXPECT_EQ(nbranches, 1);
 
-  StartTimer timer (iter.GetTree());
+  StartTimer timer (iter.GetTree(), false, nx3);
   double v = vinit, vsum=0.0;
   for (auto& entry : iter) {
     const std::vector<double>& vx = entry["vx"];
@@ -515,10 +503,6 @@ TEST(timingTests3, GetIter) {
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
 
-// ==========================================================================================
-// TTree test 3: write/read a vector of doubles
-// ==========================================================================================
-
 
 TEST(timingTests3, FillAddr) {
   TFile file ("test_timing3.root", "recreate");
@@ -526,7 +510,7 @@ TEST(timingTests3, FillAddr) {
 
   TTree tree("test","");
   std::vector<double>* vx = 0;
-  StartTimer timer (&tree, true);
+  StartTimer timer (&tree, true, nx3);
   tree.Branch ("vx", &vx);
   double v = vinit;
   for (Long64_t i = 0; i < nfill3; i++) {
@@ -552,7 +536,7 @@ TEST(timingTests3, GetAddr) {
   EXPECT_EQ(nbranches, 1);
 
   std::vector<double>* vx = 0;
-  StartTimer timer (tree.get());
+  StartTimer timer (tree.get(), false, nx3);
   tree->SetBranchAddress ("vx", &vx);
   double v = vinit, vsum=0.0;
   Long64_t n = tree->GetEntries();
@@ -570,9 +554,6 @@ TEST(timingTests3, GetAddr) {
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
 
-// ==========================================================================================
-// TTreeReader test 3: read a vector of doubles
-// ==========================================================================================
 
 TEST(timingTests3, GetReader) {
   TFile file ("test_timing3.root");
@@ -584,7 +565,7 @@ TEST(timingTests3, GetReader) {
   Int_t nbranches = ShowBranches (file, reader.GetTree(), branch_type3);
   EXPECT_EQ(nbranches, 1);
 
-  StartTimer timer (reader.GetTree());
+  StartTimer timer (reader.GetTree(), false, nx3);
   TTreeReaderArray<Double_t> vals(reader, "vx");
 
   double v = vinit, vsum=0.0;
@@ -595,6 +576,35 @@ TEST(timingTests3, GetReader) {
       vsum += x;
 #ifndef FAST_CHECKS
       EXPECT_EQ (x, v++) << Form("entry %lld, element %zu",reader.GetCurrentEntry(),i);
+#endif
+    }
+  }
+  double vn = double(nbranches*nfill3*nx3);
+  EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
+}
+
+
+TEST(timingTests3, GetReader2) {
+  TFile file ("test_timing3.root");
+  ASSERT_FALSE(file.IsZombie()) << "no file";
+
+  TTreeReader reader ("test", &file);
+  ASSERT_TRUE(reader.GetTree()) << "no tree";
+  EXPECT_EQ(reader.GetEntries(), nfill3);
+  Int_t nbranches = ShowBranches (file, reader.GetTree(), branch_type3);
+  EXPECT_EQ(nbranches, 1);
+
+  StartTimer timer (reader.GetTree(), false, nx3);
+  TTreeReaderValue<std::vector<double>> vals(reader, "vx");
+
+  double v = vinit, vsum=0.0;
+  while (reader.Next()) {
+    const std::vector<double>& vx = *vals;
+    EXPECT_EQ (vx.size(), nx3);
+    for (auto& x : vx) {
+      vsum += x;
+#ifndef FAST_CHECKS
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %d",reader.GetCurrentEntry(),&x-vx.data());
 #endif
     }
   }

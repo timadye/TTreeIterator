@@ -27,7 +27,7 @@ c
 run ./TestTiming --gtest_filter="timingTests1.FillIter"
 
                                                  t 'SetBranchAddress' 'timingTests1.GetAddr'
-                                                 t 'TTreeReader'      'timingTests1.GetReader'
+                                                 t 'TTreeReaderValue' 'timingTests1.GetReader'
 c -DUSE_any=1 -DUSE_map=1                      ; t 'map'              'timingTests1.GetIter'
 c -DUSE_any=1 -DUSE_OrderedMap                 ; t 'map+vector'       'timingTests1.GetIter'
 c -DUSE_any=1                                  ; t 'vector'           'timingTests1.GetIter'
