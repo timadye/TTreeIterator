@@ -1,13 +1,15 @@
-#ifndef HEADER_Cpp11_Any
-#define HEADER_Cpp11_Any
+#ifndef HEADER_Cpp11_any
+#define HEADER_Cpp11_any
 
-#ifdef Cpp11_Any_OPTIMIZE
-#define ANY_TEMPLATE_OPT 1   // optimise templated Any methods
+#ifdef Cpp11_any_OPTIMIZE
+#define ANY_TEMPLATE_OPT 1   // optimise templated any methods
 #define NO_ANY_RTTI_CHECK 1  // don't check type_info in any_cast<T>(any), just use templated function pointer
-#define NO_ANY_RTTI 1        // don't use type_info (removes Any::type() method) - not standard conforming
+#define NO_ANY_RTTI 1        // don't use type_info (removes any::type() method) - not standard conforming
 #define UNCHECKED_ANY 1      // don't check type of any_cast<T>(any)             - not standard conforming
 #define NO_ANY_EXCEPTIONS 1  // don't throw exceptions                           - not standard conforming
 #endif
+
+//#define Cpp11_std_any 1
 
 #include <typeinfo>
 #include <new>
@@ -22,7 +24,7 @@
 // The code has been fixed to work with C++11 and extensively de-dOxygenified,
 // and de-STLified to make it easier to read (for me at least).
 //
-// An Cpp11::Any object's state is either empty or it stores a contained object of CopyConstructible type.
+// An Cpp11::any object's state is either empty or it stores a contained object of CopyConstructible type.
 
 #ifdef __cpp_if_constexpr
 #define Cpp11_constexpr_if constexpr
@@ -38,9 +40,13 @@
 #define Cpp11_in_place_type(T) in_place_type_t<T>{}
 #endif
 
-namespace Cpp11 {
-
-  class Any {
+#ifdef Cpp11_std_any
+namespace std
+#else
+namespace Cpp11
+#endif
+{
+  class any {
     // Some internal stuff from GCC's std namespace...
     // See specialisations of or_ and and_ at end of class
     template<typename...> struct or_;
@@ -99,7 +105,7 @@ namespace Cpp11 {
                                               Manager_external<T>>::type;
 
     template<typename T, typename V = typename std::decay<T>::type>
-    using Decay_if_not_any = typename std::enable_if<!std::is_same<V, Any>::value, V>::type;
+    using Decay_if_not_any = typename std::enable_if<!std::is_same<V, any>::value, V>::type;
 
     // Emplace with an object created from args as the contained object.
     template <typename T, typename... Args, typename Mgr = Manager<T>>
@@ -128,15 +134,15 @@ namespace Cpp11 {
     using emplace_t = typename any_constructible<V&, V, Args...>::type;
 
   public:
-    using Any_type_code = const void*;
+    using any_type_code = const void*;
 
     // construct/destruct
 
     // Default constructor, creates an empty object.
-    constexpr Any() noexcept : _manager(nullptr) {}
+    constexpr any() noexcept : _manager(nullptr) {}
 
     // Copy constructor, copies the state of other
-    Any(const Any& other) {
+    any(const any& other) {
       if (!other.has_value())
         _manager = nullptr;
       else {
@@ -147,7 +153,7 @@ namespace Cpp11 {
     }
 
     // Move constructor, transfer the state from other
-    Any(Any&& other) noexcept {
+    any(any&& other) noexcept {
       if (!other.has_value())
         _manager = nullptr;
       else {
@@ -161,35 +167,35 @@ namespace Cpp11 {
     template <typename T, typename V = Decay_if_not_any<T>,
               typename Mgr = Manager<V>,
               typename std::enable_if<std::is_copy_constructible<V>::value && !is_in_place_type<V>::value, bool>::type = true>
-    Any(T&& value) : _manager(&Mgr::manage) {
+    any(T&& value) : _manager(&Mgr::manage) {
       Mgr::create(_storage, std::forward<T>(value));
     }
 
     // Construct with an object created from args as the contained object.
     template <typename T, typename... Args, typename V = typename std::decay<T>::type, typename Mgr = Manager<V>, any_constructible_t<V, Args&&...> = false>
-    explicit Any(in_place_type_t<T>, Args&&... args) : _manager(&Mgr::manage) {
+    explicit any(in_place_type_t<T>, Args&&... args) : _manager(&Mgr::manage) {
       Mgr::create(_storage, std::forward<Args>(args)...);
     }
 
     // Construct with an object created from il and args as the contained object.
     template <typename T, typename Up, typename... Args, typename V = typename std::decay<T>::type, typename Mgr = Manager<V>, any_constructible_t<V, std::initializer_list<Up>, Args&&...> = false>
-    explicit Any(in_place_type_t<T>, std::initializer_list<Up> il, Args&&... args) : _manager(&Mgr::manage) {
+    explicit any(in_place_type_t<T>, std::initializer_list<Up> il, Args&&... args) : _manager(&Mgr::manage) {
       Mgr::create(_storage, il, std::forward<Args>(args)...);
     }
 
     // Destructor, calls reset()
-    ~Any() { reset(); }
+    ~any() { reset(); }
 
     // assignments
 
     // Copy the state of another object.
-    Any& operator=(const Any& rhs) {
-      *this = Any(rhs);
+    any& operator=(const any& rhs) {
+      *this = any(rhs);
       return *this;
     }
 
     // Move assignment operator
-    Any& operator=(Any&& rhs) noexcept {
+    any& operator=(any&& rhs) noexcept {
       if (!rhs.has_value())
         reset();
       else if (this != &rhs) {
@@ -203,9 +209,9 @@ namespace Cpp11 {
 
     // Store a copy of rhs as the contained object.
     template<typename T>
-    typename std::enable_if<std::is_copy_constructible<Decay_if_not_any<T>>::value, Any&>::type
+    typename std::enable_if<std::is_copy_constructible<Decay_if_not_any<T>>::value, any&>::type
     operator=(T&& rhs) {
-      *this = Any(std::forward<T>(rhs));
+      *this = any(std::forward<T>(rhs));
       return *this;
     }
 
@@ -236,11 +242,11 @@ namespace Cpp11 {
     }
 
     // Exchange state with another object.
-    void swap(Any& rhs) noexcept {
+    void swap(any& rhs) noexcept {
       if (!has_value() && !rhs.has_value()) return;
       if (has_value() && rhs.has_value()) {
         if (this == &rhs) return;
-        Any tmp;
+        any tmp;
         Arg arg;
         arg._any = &tmp;
         rhs._manager(Op_xfer, &rhs, &arg);
@@ -249,8 +255,8 @@ namespace Cpp11 {
         arg._any = this;
         tmp._manager(Op_xfer, &tmp, &arg);
       } else {
-        Any* empty = !has_value() ? this : &rhs;
-        Any* full = !has_value() ? &rhs : this;
+        any* empty = !has_value() ? this : &rhs;
+        any* full = !has_value() ? &rhs : this;
         Arg arg;
         arg._any = empty;
         full->_manager(Op_xfer, full, &arg);
@@ -272,13 +278,13 @@ namespace Cpp11 {
     }
 #endif
 
-    Any_type_code type_code() const noexcept {
-      return reinterpret_cast<Any_type_code>(_manager);
+    any_type_code type_code() const noexcept {
+      return reinterpret_cast<any_type_code>(_manager);
     }
 
-    template<typename T> static constexpr Any_type_code type_code() {
+    template<typename T> static constexpr any_type_code type_code() {
       using Up = remove_cvref_t<T>;
-      return reinterpret_cast<Any_type_code>(&Any::Manager<Up>::manage);
+      return reinterpret_cast<any_type_code>(&any::Manager<Up>::manage);
     }
 
     template<typename T> static constexpr bool is_valid_cast() { return or_<std::is_reference<T>, std::is_copy_constructible<T>>::value; }
@@ -299,16 +305,16 @@ namespace Cpp11 {
     union Arg {
       void* _obj;
       const std::type_info* _typeinfo;
-      Any* _any;
+      any* _any;
     };
 
-    void (*_manager)(Op, const Any*, Arg*);
+    void (*_manager)(Op, const any*, Arg*);
     Storage _storage;
 
     // Manage in-place contained object.
     template<typename T>
     struct Manager_internal {
-      static void manage(Op which, const Any* anyp, Arg* arg);
+      static void manage(Op which, const any* anyp, Arg* arg);
 
       template<typename Up>
       static void create(Storage& storage, Up&& value) {
@@ -333,7 +339,7 @@ namespace Cpp11 {
     // Manage external contained object.
     template<typename T>
     struct Manager_external {
-      static void manage(Op which, const Any* anyp, Arg* arg);
+      static void manage(Op which, const any* anyp, Arg* arg);
 
       template<typename Up>
       static void create(Storage& storage, Up&& value) {
@@ -356,77 +362,76 @@ namespace Cpp11 {
 
 
   public:
-    // Exchange the states of two Any objects.
-    static void swap(Any& x, Any& y) noexcept { x.swap(y); }
+    // Exchange the states of two any objects.
+    static void swap(any& x, any& y) noexcept { x.swap(y); }
 
-    // Create an Any holding a T constructed from args.
+    // Create an any holding a T constructed from args.
     template <typename T, typename... Args>
-    static Any make_any(Args&&... args) {
-      return Any(Cpp11_in_place_type(T), std::forward<Args>(args)...);
+    static any make_any(Args&&... args) {
+      return any(Cpp11_in_place_type(T), std::forward<Args>(args)...);
     }
 
-    // Create an Any holding a T constructed from il and args.
+    // Create an any holding a T constructed from il and args.
     template <typename T, typename Up, typename... Args>
-    static Any make_any(std::initializer_list<Up> il, Args&&... args) {
-      return Any(Cpp11_in_place_type(T), il, std::forward<Args>(args)...);
+    static any make_any(std::initializer_list<Up> il, Args&&... args) {
+      return any(Cpp11_in_place_type(T), il, std::forward<Args>(args)...);
     }
 
     // Access the contained object.
     //   ValueType  A const-reference or CopyConstructible type.
-    //   any        The object to access.
+    //   any_       The object to access.
     //   returns    The contained object.
     template<typename ValueType>
-    static ValueType any_cast(const Any& any) {
+    static ValueType any_cast(const any& any_) {
       using Up = remove_cvref_t<ValueType>;
-      static_assert(Any::is_valid_cast<ValueType>(),                    "Template argument must be a reference or CopyConstructible type");
+      static_assert(any::is_valid_cast<ValueType>(),                    "Template argument must be a reference or CopyConstructible type");
       static_assert(std::is_constructible<ValueType, const Up&>::value, "Template argument must be constructible from a const value.");
-      auto p = any_cast<Up>(&any);
+      auto p = any_cast<Up>(&any_);
       if (p) return static_cast<ValueType>(*p);
       throw_bad_any_cast();
     }
 
     // Access the contained object.
     //   ValueType  A reference or CopyConstructible type.
-    //   any        The object to access.
+    //   any_       The object to access.
     //   returns    The contained object.
     template<typename ValueType>
-    static ValueType any_cast(Any& any) {
+    static ValueType any_cast(any& any_) {
       using Up = remove_cvref_t<ValueType>;
-      static_assert(Any::is_valid_cast<ValueType>(),              "Template argument must be a reference or CopyConstructible type");
+      static_assert(any::is_valid_cast<ValueType>(),              "Template argument must be a reference or CopyConstructible type");
       static_assert(std::is_constructible<ValueType, Up&>::value, "Template argument must be constructible from an lvalue.");
-      auto p = any_cast<Up>(&any);
+      auto p = any_cast<Up>(&any_);
       if (p) return static_cast<ValueType>(*p);
       throw_bad_any_cast();
     }
 
     template<typename ValueType>
-    static ValueType any_cast(Any&& any) {
+    static ValueType any_cast(any&& any_) {
       using Up = remove_cvref_t<ValueType>;
-      static_assert(Any::is_valid_cast<ValueType>(),             "Template argument must be a reference or CopyConstructible type");
+      static_assert(any::is_valid_cast<ValueType>(),             "Template argument must be a reference or CopyConstructible type");
       static_assert(std::is_constructible<ValueType, Up>::value, "Template argument must be constructible from an rvalue.");
-      auto p = any_cast<Up>(&any);
+      auto p = any_cast<Up>(&any_);
       if (p) return static_cast<ValueType>(std::move(*p));
       throw_bad_any_cast();
     }
 
     template<typename T>
-    static T* unchecked_any_caster(const Any* any) {
+    static T* unchecked_any_caster(const any* any_) {
 #ifndef ANY_TEMPLATE_OPT
-        Any::Arg arg;
-        any->_manager(Any::Op_access, any, &arg);
+        any::Arg arg;
+        any_->_manager(any::Op_access, any_, &arg);
         return static_cast<T*>(arg._obj);
 #else
-        return Any::Manager<T>::access(any->_storage);
+        return any::Manager<T>::access(any_->_storage);
 #endif
     }
 
     template<typename T>
-    static T* any_caster(const Any* any) {
+    static T* any_caster(const any* any_) {
       // any_cast<T> returns non-null if any->type() == typeid(T) and typeid(T) ignores cv-qualifiers so remove them:
       using Up = typename std::remove_cv<T>::type;
 #ifndef UNCHECKED_ANY_CONSTEXPR
-      if (!any) return nullptr;
-      else if Cpp11_constexpr_if (!std::is_object<T>::value) return nullptr;
+      if Cpp11_constexpr_if (!std::is_object<T>::value) return nullptr;
       // The contained value has a decayed type, so if std::decay<U>::type is not U, then it's not possible to have a contained value of type U:
       else if Cpp11_constexpr_if (!std::is_same<typename std::decay<Up>::type, Up>::value) return nullptr;
       // Only copy constructible types can be used for contained values:
@@ -435,13 +440,14 @@ namespace Cpp11 {
       else
 #endif
 #ifndef UNCHECKED_ANY
-        if (any->_manager == &Any::Manager<Up>::manage
+        if (any_ &&
+            (any_->_manager == &any::Manager<Up>::manage
 #if !defined(NO_ANY_RTTI) && !defined(NO_ANY_RTTI_CHECK)
-               || any->type() == typeid(T)
+            || any_->type() == typeid(T)
 #endif
-              )
+            ))
 #endif
-          return unchecked_any_caster<T>(any);
+          return unchecked_any_caster<T>(any_);
 #ifndef UNCHECKED_ANY
       return nullptr;
 #endif
@@ -449,25 +455,25 @@ namespace Cpp11 {
 
     // Access the contained object.
     //   ValueType  The type of the contained object.
-    //   any        A pointer to the object to access.
+    //   any_       A pointer to the object to access.
     //   returns    The address of the contained object if
-    //                any != nullptr && any.type() == typeid(ValueType)
+    //                any_ != nullptr && any_.type() == typeid(ValueType)
     //              otherwise a null pointer.
     template<typename ValueType>
-    static const ValueType* any_cast(const Any* any) noexcept {
-      return any_caster<ValueType>(any);
+    static const ValueType* any_cast(const any* any_) noexcept {
+      return any_caster<ValueType>(any_);
     }
 
     template<typename ValueType>
-    static ValueType* any_cast(Any* any) noexcept {
-      return any_caster<ValueType>(any);
+    static ValueType* any_cast(any* any_) noexcept {
+      return any_caster<ValueType>(any_);
     }
   };
 
   template<typename T>
-  void Any::Manager_internal<T>::manage(Op which, const Any* any, Arg* arg) {
+  void any::Manager_internal<T>::manage(Op which, const any* any_, Arg* arg) {
     // The contained object is in _storage._buffer
-    auto ptr = reinterpret_cast<const T*>(&any->_storage._buffer);
+    auto ptr = reinterpret_cast<const T*>(&any_->_storage._buffer);
     switch (which) {
 #ifndef ANY_TEMPLATE_OPT
     case Op_access:
@@ -481,7 +487,7 @@ namespace Cpp11 {
 #endif
     case Op_clone:
       ::new(&arg->_any->_storage._buffer) T(*ptr);
-      arg->_any->_manager = any->_manager;
+      arg->_any->_manager = any_->_manager;
       break;
     case Op_destroy:
       ptr->~T();
@@ -489,16 +495,16 @@ namespace Cpp11 {
     case Op_xfer:
       ::new(&arg->_any->_storage._buffer) T(std::move(*const_cast<T*>(ptr)));
       ptr->~T();
-      arg->_any->_manager = any->_manager;
-      const_cast<Any*>(any)->_manager = nullptr;
+      arg->_any->_manager = any_->_manager;
+      const_cast<any*>(any_)->_manager = nullptr;
       break;
     }
   }
 
   template<typename T>
-  void Any::Manager_external<T>::manage(Op which, const Any* any, Arg* arg) {
+  void any::Manager_external<T>::manage(Op which, const any* any_, Arg* arg) {
     // The contained object is *_storage._ptr
-    auto ptr = static_cast<const T*>(any->_storage._ptr);
+    auto ptr = static_cast<const T*>(any_->_storage._ptr);
     switch (which) {
 #ifndef ANY_TEMPLATE_OPT
     case Op_access:
@@ -512,22 +518,22 @@ namespace Cpp11 {
 #endif
     case Op_clone:
       arg->_any->_storage._ptr = new T(*ptr);
-      arg->_any->_manager = any->_manager;
+      arg->_any->_manager = any_->_manager;
       break;
     case Op_destroy:
       delete ptr;
       break;
     case Op_xfer:
-      arg->_any->_storage._ptr = any->_storage._ptr;
-      arg->_any->_manager = any->_manager;
-      const_cast<Any*>(any)->_manager = nullptr;
+      arg->_any->_storage._ptr = any_->_storage._ptr;
+      arg->_any->_manager = any_->_manager;
+      const_cast<any*>(any_)->_manager = nullptr;
       break;
     }
   }
 
-  // specialisations of or_ and and_ from top of Any
-  template<> struct Any::or_<>  : public std::false_type {};
-  template<> struct Any::and_<> : public std::true_type  {};
+  // specialisations of or_ and and_ from top of any
+  template<> struct any::or_<>  : public std::false_type {};
+  template<> struct any::and_<> : public std::true_type  {};
 }
 
-#endif /* HEADER_Cpp11_Any */
+#endif /* HEADER_Cpp11_any */

@@ -21,16 +21,16 @@ class TDirectory;
 //#define USE_map 1                  // BranchInfo container is a std::map (otherwise use a std::vector)
 //#define USE_OrderedMap 1           // BranchInfo container is an OrderedMap from TTreeIterator_helpers.h
 //#define NO_BranchInfo_STATS 1      // Don't keep stats for optimised BranchInfo lookup. Otherwise, prints in ~TTreeIterator if verbose.
-//#define USE_any 1                  // use C++17's std::any, instead of Cpp11::Any from detail/Cpp11_Any.h
-//#define Cpp11_Any_NOOPT 1          // don't use Cpp11::Any's optimisations (mostly removing error checking)
+//#define USE_std_any 1              // use C++17's std::any, instead of Cpp11::any from detail/Cpp11_any.h
+//#define Cpp11_any_NOOPT 1          // don't use Cpp11::any's optimisations (mostly removing error checking)
 
 #if defined(USE_OrderedMap) && !defined(USE_map)
 # define USE_map 1
 #endif
 
-#if defined(USE_any) && (__cplusplus < 201703L)   // <version> not available until GCC9, so no way to check __cpp_lib_any without including <any>.
-# undef USE_any                      // only option is to use Cpp11::Any
-# define Cpp11_Any_NOOPT 1
+#if defined(USE_std_any) && (__cplusplus < 201703L)   // <version> not available until GCC9, so no way to check __cpp_lib_any without including <any>.
+# undef USE_std_any                  // only option is to use Cpp11::any
+# define Cpp11_any_NOOPT 1
 #endif
 
 #ifdef USE_OrderedMap
@@ -45,12 +45,12 @@ class TDirectory;
 #define NO_BranchInfo_STATS 1
 #endif
 
-#ifndef USE_any
-# ifndef Cpp11_Any_NOOPT
-#  define Cpp11_Any_OPTIMIZE 1
+#ifndef USE_std_any
+# ifndef Cpp11_any_NOOPT
+#  define Cpp11_any_OPTIMIZE 1
 # endif
-# include "TTreeIterator/detail/Cpp11_Any.h"  // Implementation of std::any, compatible with C++11.
-using     any_namespace = Cpp11::Any;
+# include "TTreeIterator/detail/Cpp11_any.h"  // Implementation of std::any, compatible with C++11.
+using     any_namespace = Cpp11::any;
 #else
 # include <any>
 namespace any_namespace = ::std;
@@ -283,9 +283,9 @@ protected:
 #else
   template <typename K, typename V> using branch_map_type = std::map<K,V>;
 #endif
-#ifndef USE_any
-  using any_type = Cpp11::Any;
-  using type_code_t = any_namespace::Any_type_code;
+#ifndef USE_std_any
+  using any_type = Cpp11::any;
+  using type_code_t = any_namespace::any_type_code;
   template<typename T> static constexpr type_code_t type_code() { return any_namespace::type_code<T>(); }
 #else
   using any_type = std::any;
