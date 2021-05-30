@@ -2,17 +2,18 @@
 #define HEADER_Cpp11_Any
 
 #ifdef Cpp11_Any_OPTIMIZE
-#define NO_ANY_RTTI 1        // don't use type_info (removes Any::type() method)
 #define ANY_TEMPLATE_OPT 1   // optimise templated Any methods
-#define UNCHECKED_ANY 1      // don't check type of any_cast<T>(any)
+#define NO_ANY_RTTI_CHECK 1  // don't check type_info in any_cast<T>(any), just use templated function pointer
+#define NO_ANY_RTTI 1        // don't use type_info (removes Any::type() method) - not standard conforming
+#define UNCHECKED_ANY 1      // don't check type of any_cast<T>(any)             - not standard conforming
+#define NO_ANY_EXCEPTIONS 1  // don't throw exceptions                           - not standard conforming
 #endif
 
-#ifndef NO_ANY_RTTI
 #include <typeinfo>
-#endif
 #include <new>
 #include <utility>
 #include <type_traits>
+#include <cstdlib>
 
 // A type-safe container of any type.
 //
@@ -63,10 +64,15 @@ namespace Cpp11 {
     template<typename T> struct is_in_place_type_impl<in_place_type_t<T>> : std::true_type {};
     template<typename T> struct is_in_place_type : public is_in_place_type_impl<T> {};
 
+#if __cpp_exceptions && !defined(NO_ANY_EXCEPTIONS)
     // Exception class thrown by a failed any_cast
     struct bad_any_cast : public std::bad_cast {
       virtual const char* what() const noexcept { return "bad any_cast"; }
     };
+    [[noreturn]] static void throw_bad_any_cast() { throw bad_any_cast{}; }
+#else
+    [[noreturn]] static void throw_bad_any_cast() { std::abort();         }
+#endif
 
     // Holds either pointer to a heap object or the contained object itself.
     union Storage {
@@ -266,7 +272,7 @@ namespace Cpp11 {
     }
 #endif
 
-    const Any_type_code type_code() const noexcept {
+    Any_type_code type_code() const noexcept {
       return reinterpret_cast<Any_type_code>(_manager);
     }
 
@@ -376,7 +382,7 @@ namespace Cpp11 {
       static_assert(std::is_constructible<ValueType, const Up&>::value, "Template argument must be constructible from a const value.");
       auto p = any_cast<Up>(&any);
       if (p) return static_cast<ValueType>(*p);
-      throw bad_any_cast();
+      throw_bad_any_cast();
     }
 
     // Access the contained object.
@@ -390,7 +396,7 @@ namespace Cpp11 {
       static_assert(std::is_constructible<ValueType, Up&>::value, "Template argument must be constructible from an lvalue.");
       auto p = any_cast<Up>(&any);
       if (p) return static_cast<ValueType>(*p);
-      throw bad_any_cast();
+      throw_bad_any_cast();
     }
 
     template<typename ValueType>
@@ -400,7 +406,7 @@ namespace Cpp11 {
       static_assert(std::is_constructible<ValueType, Up>::value, "Template argument must be constructible from an rvalue.");
       auto p = any_cast<Up>(&any);
       if (p) return static_cast<ValueType>(std::move(*p));
-      throw bad_any_cast();
+      throw_bad_any_cast();
     }
 
     template<typename T>
@@ -430,7 +436,7 @@ namespace Cpp11 {
 #endif
 #ifndef UNCHECKED_ANY
         if (any->_manager == &Any::Manager<Up>::manage
-#ifndef NO_ANY_RTTI
+#if !defined(NO_ANY_RTTI) && !defined(NO_ANY_RTTI_CHECK)
                || any->type() == typeid(T)
 #endif
               )

@@ -15,6 +15,7 @@
 #include "TUUID.h"
 #include "TH1.h"
 #include "TRandom3.h"
+#include "TTreeReader.h"
 
 #include "TTreeIterator/TTreeIterator.h"
 
@@ -543,6 +544,30 @@ TEST(iterTests4, GetAddr) {
   c1.Print("xyza.pdf(");
   hz.Draw();
   c1.Print("xyza.pdf)");
+}
+
+TEST(iterTests4, GetReader) {
+  TFile file ("xyz.root");
+  if (file.IsZombie()) return;
+
+  TH2D hxy ("vxy", "vxy", 48, -6, 6, 32, -4, 4);
+  TH1D hz  ("vz",  "vz",  100, -200, 200);
+
+  TTreeReader tree("xyz", &file);
+  TTreeReaderValue<double> vx (tree, "vx2");
+  TTreeReaderValue<double> vy (tree, "vx");  // <-- spot the mistake!
+  TTreeReaderValue<double> vz (tree, "vz");
+  while (tree.Next()) {
+    std::cout << *vx << '\n';
+    hxy.Fill (*vx, *vy);
+    hz .Fill (*vz);
+  }
+
+  TCanvas c1("c1");
+  hxy.Draw("colz");
+  c1.Print("xyzr.pdf(");
+  hz.Draw();
+  c1.Print("xyzr.pdf)");
 }
 
 TEST(iterTests4, PyROOT) {
