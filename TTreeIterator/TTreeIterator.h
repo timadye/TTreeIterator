@@ -50,10 +50,14 @@ class TDirectory;
 #  define Cpp11_any_OPTIMIZE 1
 # endif
 # include "TTreeIterator/detail/Cpp11_any.h"  // Implementation of std::any, compatible with C++11.
-using     any_namespace = Cpp11::any;
 #else
 # include <any>
+#endif
+
+#if defined(USE_std_any) || defined(Cpp11_std_any)
 namespace any_namespace = ::std;
+#else
+namespace any_namespace = Cpp11;
 #endif
 
 
@@ -284,7 +288,7 @@ protected:
   template <typename K, typename V> using branch_map_type = std::map<K,V>;
 #endif
 #ifndef USE_std_any
-  using any_type = Cpp11::any;
+  using any_type = any_namespace::any;
   using type_code_t = any_namespace::any_type_code;
   template<typename T> static constexpr type_code_t type_code() { return any_namespace::type_code<T>(); }
 #else
