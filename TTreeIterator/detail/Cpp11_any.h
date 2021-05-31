@@ -10,7 +10,7 @@
 #define NO_ANY_EXCEPTIONS 1  // don't throw exceptions                           - not standard conforming
 #endif
 
-#define Cpp11_std_any 1
+//#define Cpp11_std_any 1
 
 #include <typeinfo>
 #include <new>
