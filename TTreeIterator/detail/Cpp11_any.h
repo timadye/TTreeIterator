@@ -403,7 +403,7 @@ namespace Cpp11
 #endif
            )
 #endif
-          return unchecked_any_caster<T>();
+          return unchecked_any_caster<Up>();
 #ifndef UNCHECKED_ANY
       return nullptr;
 #endif
