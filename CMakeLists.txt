@@ -28,14 +28,23 @@ include(FetchContent)
 FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG        release-1.8.0
+        GIT_TAG        release-1.10.0
+)
+FetchContent_Declare(
+        googlebenchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG        main  # need main for benchmark::benchmark
 )
 FetchContent_GetProperties(googletest)
 if(NOT googletest_POPULATED)
     FetchContent_Populate(googletest)
     add_subdirectory(${googletest_SOURCE_DIR} ${googletest_BINARY_DIR})
 endif()
-
+FetchContent_GetProperties(googlebenchmark)
+if(NOT googlebenchmark_POPULATED)
+    FetchContent_Populate(googlebenchmark)
+    add_subdirectory(${googlebenchmark_SOURCE_DIR} ${googlebenchmark_BINARY_DIR})
+endif()
 
 add_subdirectory(TTreeIterator)
 #add_subdirectory(Tools)
