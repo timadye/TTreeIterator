@@ -1,3 +1,7 @@
+Optimisation for std::any that removes the need for a function pointer call
+and switch in std::any_cast and std::any::emplace.
+* Tim Adye <tim.adye@cern.ch>, 1-Jun-2021.
+
 diff --git a/libstdc++-v3/include/std/any b/libstdc++-v3/include/std/any
 index 391e43339a0..b8c53656db2 100644
 --- a/libstdc++-v3/include/std/any
