@@ -162,6 +162,7 @@ TEST(timingTests1, FillIter) {
   double v = vinit;
   for (auto& entry : iter.FillEntries(nfill1)) {
     for (auto& b : bnames) entry[b.c_str()] = v++;
+    entry.Fill();
   }
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type1, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill1), v);
@@ -344,6 +345,7 @@ TEST(timingTests2, FillIter) {
     MyStruct M;
     for (auto& x : M.x) x = v++;
     entry["M"] = M;
+    entry.Fill();
   }
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type2, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill2*nx2), v);
@@ -472,6 +474,7 @@ TEST(timingTests3, FillIter) {
     std::vector<double> vx(nx3);
     for (size_t i=0; i<nx3; i++) vx[i] = v++;
     entry["vx"] = std::move(vx);
+    entry.Fill();
   }
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type3, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill3*nx3), v);

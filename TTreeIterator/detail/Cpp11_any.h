@@ -3,7 +3,7 @@
 
 #ifdef Cpp11_any_OPTIMIZE
 #define ANY_TEMPLATE_OPT 1   // optimise templated any methods
-#define NO_ANY_RTTI_CHECK 1  // don't check type_info in any_cast<T>(any), just use templated function pointer
+//#define NO_ANY_RTTI_CHECK 1  // don't check type_info in any_cast<T>(any), just use templated function pointer - not useful optimisation
 #define NO_ANY_RTTI 1        // don't use type_info (removes any::type() method) - not standard conforming
 #define NO_ANY_ACCESS 1      // don't include any::Manager<T>::manage(Op_access) method - not ABI compatible with std::any
 #define UNCHECKED_ANY 1      // don't check type of any_cast<T>(any)             - not standard conforming
@@ -399,6 +399,8 @@ namespace Cpp11
 #ifndef UNCHECKED_ANY
         if (_manager == &any::Manager<Up>::manage
 #if !defined(NO_ANY_RTTI) && !defined(NO_ANY_RTTI_CHECK)
+            // see https://gcc.gnu.org/git/?p=gcc.git;a=commit;h=aa573a6a3e165632103f2f8defb9768106db6a61
+            // for why this is needed. Fortunately it is rarely used, so doesn't usually slow us down
             || type() == typeid(T)
 #endif
            )

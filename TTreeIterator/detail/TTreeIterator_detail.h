@@ -120,39 +120,32 @@ inline /*static*/ void TTreeIterator::SetDefaultValue (TTreeIterator& tt, Branch
 }
 
 
-inline /*virtual*/ Int_t TTreeIterator::Fill (bool canSkip/*=false*/) {
+inline /*virtual*/ Int_t TTreeIterator::Fill() {
   if (!fTree) return 0;
-  if (canSkip && fNset==0 && fFillStrategy != kEveryIteration) {
-    if (fVerbose >= 2) Info  ("Fill", "No values set for entry %lld - skip Fill", fIndex);
-    return 0;
-  }
 
 #ifndef NO_FILL_UNSET_DEFAULT
-  if (fFillStrategy != kUnmanaged) {
-    for (auto& b : fBranches) {
+  for (auto& b : fBranches) {
 #ifndef USE_map
-      BranchInfo* ibranch = &b;
+    BranchInfo* ibranch = &b;
 #else
-      BranchInfo* ibranch = &b.second;
+    BranchInfo* ibranch = &b.second;
 #endif
-      if (ibranch->set
+    if (ibranch->set
 #ifndef OVERRIDE_BRANCH_ADDRESS
-          && !ibranch->puser
+        && !ibranch->puser
 #endif
-         ) {
-        if (ibranch->unset)
-          (*ibranch->SetDefaultValue) (*this, ibranch,
+       ) {
+      if (ibranch->unset)
+        (*ibranch->SetDefaultValue) (*this, ibranch,
 #ifndef USE_map
-                                       b.name.c_str()
+                                     b.name.c_str()
 #else
-                                       b.first.first.c_str()
+                                     b.first.first.c_str()
 #endif
-                                      );
-        else ibranch->unset = true;
-      }
+                                    );
+      else ibranch->unset = true;
     }
   }
-  fNset = 0;
 #endif
 
   Int_t nbytes = fTree->Fill();
@@ -253,7 +246,6 @@ inline TBranch* TTreeIterator::Branch (const char* name, const char* leaflist, I
 template <typename T>
 inline const T& TTreeIterator::Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
   using V = remove_cvref_t<T>;
-  fNset++;
   if (BranchInfo* ibranch = GetBranchInfo<T> (name)) {
     return SetValue<T>(ibranch, name, std::forward<T>(val));
   }

@@ -178,6 +178,7 @@ TEST(iterTests1, FillIter) {
     h.SetDirectory(0);
     for (int j=0;j<1000+i;j++) h.Fill(gRandom->Gaus(2,0.5));
     entry["h"] = h;
+    entry.Fill();
   }
   Info ("FillIter1", "xsum = %g", xsum);  // compare with std::accumulate in AlgIter below
 }
@@ -342,6 +343,7 @@ TEST(iterTests2, FillIter) {
     if (i >= 1) entry["s"] = std::string (Form("s:%g",v++));
     if (i >= 2) entry["M"] = MyStruct3(v++,v++,v++,int(v++));
     if (i >= 1) { entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++; }
+    entry.Fill();
   }
 }
 
@@ -363,6 +365,7 @@ TEST(iterTests2, FillIter2) {
     entry["s"] = std::string (Form("s:%g",v++));
     entry["M"] = MyStruct3(v++,v++,v++,int(v++));
     entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++;
+    entry.Fill();
   }
 }
 
@@ -495,6 +498,7 @@ TEST(iterTests4, FillIter) {
     entry["vx"] = gRandom->Gaus(2,3);
     entry["vy"] = gRandom->Gaus(-1,2);
     entry["vz"] = gRandom->Gaus(0,100);
+    entry.Fill();
   }
 }
 
