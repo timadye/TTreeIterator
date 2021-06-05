@@ -153,7 +153,6 @@ TEST(iterTests1, FillIter) {
   TTreeIterator iter ("test", &f, verbose);
   double v = vinit;  // fill each element with a different value starting from here
   double xsum = 0.0;
-  int ml = 1;
   for (auto& entry : iter.FillEntries(nfill1)) {
     Long64_t i=entry.index();
     //    if (i >= 2) break;  // can stop early
@@ -165,15 +164,15 @@ TEST(iterTests1, FillIter) {
     const std::string& sr = entry["s"] = std::string (Form("s:%g",v++));
     if (i!=0) entry["ss"] = std::string (Form("ss:%g",v++));
     std::cout << "x=" << xr << ", s=" << sr << "\n";
-    entry["p"] = std::make_pair<std::string,int>(Form("p:%g",v++),v++);
-    entry["t"] = std::make_tuple<std::string,std::string,double,float>(Form("t0:%g",v++),Form("t1:%g",v++),v++,v++);
+    entry["p"] = std::make_pair<std::string,int>(Form("p:%g",v),v+1); v+=2;
+    entry["t"] = std::make_tuple<std::string,std::string,double,float>(Form("t0:%g",v),Form("t1:%g",v+1),v+2,v+3); v+=4;
     entry["u"] = TUUID();
     entry["r"] = TRandom3(0);
-    if (i!=2) entry["M"] = MyStruct{v++,v++,v++,int(v++)};
+    if (i!=2) { entry["M"] = MyStruct{v,v+1,v+2,int(v+3)}; v+=4; }
     MyStruct2 M2{v++,""};
-    strncpy (M2.s, Form("M2.s:%.*f",ml++,v++), sizeof(M2.s));
+    strncpy (M2.s, Form("M2.s:%.1f",v++), sizeof(M2.s)-1);
     entry["M2"] = M2;
-    if (i!=3) entry["v"] = std::vector<std::string>({Form("v:%g",v++), Form("v:%g",v++)});
+    if (i!=3) { entry["v"] = std::vector<std::string>({Form("v:%g",v), Form("v:%g",v+1)}); v+=2; }
     TH1D h(Form("h%lld",i),"h",4,0,4.0);
     h.SetDirectory(0);
     for (int j=0;j<1000+i;j++) h.Fill(gRandom->Gaus(2,0.5));
@@ -269,7 +268,7 @@ TEST(iterTests2, FillAddr) {
     }
     a = v++;
     if (i >= 1) s = std::string (Form("s:%g",v++));
-    if (i >= 2) M = MyStruct3(v++,v++,v++,int(v++));
+    if (i >= 2) { M = MyStruct3(v,v+1,v+2,int(v+3)); v+=4; }
     if (i >= 1) { o = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++; }
     tree.Fill();
   }
@@ -306,10 +305,10 @@ TEST(iterTests2, GetAddr) {
     Info("GetAddr2","a=%g, s=\"%s\", M=(%g,%g,%g,%d), o=(%g,\"%s\")",a, s.c_str(), M.x[0],M.x[1],M.x[2],M.i, o.value,o.GetName());
 #ifdef FULL_CHECKS
     EXPECT_EQ (a, v++);
-    if (i >= 1) EXPECT_EQ (s, std::string (Form("s:%g",v++)));
-    else        EXPECT_EQ (s, std::string());
-    if (i >= 2) EXPECT_EQ (M, MyStruct3(v++,v++,v++,int(v++)));
-    else        EXPECT_EQ (M, MyStruct3());
+    if (i >= 1)   EXPECT_EQ (s, std::string (Form("s:%g",v++)));
+    else          EXPECT_EQ (s, std::string());
+    if (i >= 2) { EXPECT_EQ (M, MyStruct3(v,v+1,v+2,int(v+3))); v+=4; }
+    else          EXPECT_EQ (M, MyStruct3());
     if (i >= 1) { EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v)); v++; }
     else        { TestObj t; EXPECT_EQ (o.value, t.value); EXPECT_STREQ (o.GetName(), t.GetName()); }
 #endif
@@ -341,7 +340,7 @@ TEST(iterTests2, FillIter) {
     if (j++ == 3) continue;
     entry["a"] = v++;
     if (i >= 1) entry["s"] = std::string (Form("s:%g",v++));
-    if (i >= 2) entry["M"] = MyStruct3(v++,v++,v++,int(v++));
+    if (i >= 2) { entry["M"] = MyStruct3(v,v+1,v+2,int(v+3)); v+= 4; }
     if (i >= 1) { entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++; }
     entry.Fill();
   }
@@ -363,7 +362,7 @@ TEST(iterTests2, FillIter2) {
   for (auto& entry : iter.FillEntries(nfill22)) {
     entry["a"] = v++;
     entry["s"] = std::string (Form("s:%g",v++));
-    entry["M"] = MyStruct3(v++,v++,v++,int(v++));
+    entry["M"] = MyStruct3(v,v+1,v+2,int(v+3)); v+=4;
     entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++;
     entry.Fill();
   }
@@ -397,10 +396,10 @@ TEST(iterTests2, GetIter) {
 #ifdef FULL_CHECKS
     if (i == nfill2-1) v = vinit2;
     EXPECT_EQ (a, v++);
-    if (i >= 1) EXPECT_EQ (s, std::string (Form("s:%g",v++)));
-    else        EXPECT_EQ (s, std::string());
-    if (i >= 2) EXPECT_EQ (M, MyStruct3(v++,v++,v++,int(v++)));
-    else        EXPECT_EQ (M, TTreeIterator::type_default<MyStruct3>());
+    if (i >= 1)   EXPECT_EQ (s, std::string (Form("s:%g",v++)));
+    else          EXPECT_EQ (s, std::string());
+    if (i >= 2) { EXPECT_EQ (M, MyStruct3(v,v+1,v+2,int(v+3))); v+=4; }
+    else          EXPECT_EQ (M, TTreeIterator::type_default<MyStruct3>());
     if (i >= 1) { EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v)); v++; }
     else        { TestObj t; EXPECT_EQ (o.value, t.value); EXPECT_STREQ (o.GetName(), t.GetName()); }
 #endif
@@ -422,45 +421,45 @@ TEST(iterTests3, GetIter) {
 //  auto covQual = entry.Get<int>("covQual");
 //  int covQual = entry.Get("covQual");
     int covQual = entry["covQual"];
-    Info ("GetIter3", "Entry %d covQual = %d", i, covQual);
+    Info ("GetIter3", "Entry %lld covQual = %d", i, covQual);
 
 //  int bad_int = entry["bad_int"];
     auto bad_int = entry.Get("bad_int",-9999);
-    Info ("GetIter3", "Entry %d bad_int = %d", i, bad_int);
+    Info ("GetIter3", "Entry %lld bad_int = %d", i, bad_int);
 
 //  auto mu = entry.Get<double>("const.mu");
 //  double mu = entry.Get("const.mu",-999.0);
     double mu = entry["const.mu"];
-    Info ("GetIter3", "Entry %d const.mu = %g", i, mu);
+    Info ("GetIter3", "Entry %lld const.mu = %g", i, mu);
 
     int imu = entry["const.mu"];
-    Info ("GetIter3", "Entry %d const.mu = %d (get as int)", i, imu);
+    Info ("GetIter3", "Entry %lld const.mu = %d (get as int)", i, imu);
 
     float fmu = entry["const.mu"];
-    Info ("GetIter3", "Entry %d const.mu = %g (get as float)", i, fmu);
+    Info ("GetIter3", "Entry %lld const.mu = %g (get as float)", i, fmu);
 
 //  double bad_double = entry.Get("bad_double",-999.0);
     double bad_double = entry["bad_double"];
-    Info ("GetIter3", "Entry %d bad_double = %g", i, bad_double);
+    Info ("GetIter3", "Entry %lld bad_double = %g", i, bad_double);
 
 //  auto hash = entry.Get<std::pair<int,int>>("hash");
 //  std::pair<int,int> hash = entry.Get("hash");
     std::pair<int,int> hash = entry["hash"];
-    Info ("GetIter3", "Entry %d hash = (0x%08x,0x%08x)", i, hash.first, hash.second);
+    Info ("GetIter3", "Entry %lld hash = (0x%08x,0x%08x)", i, hash.first, hash.second);
 
     std::pair<int,int> bad_pair = entry["bad_pair"];
-    Info ("GetIter3", "Entry %d bad_pair = (0x%08x,0x%08x)", i, bad_pair.first, bad_pair.second);
+    Info ("GetIter3", "Entry %lld bad_pair = (0x%08x,0x%08x)", i, bad_pair.first, bad_pair.second);
 
 //  auto statusHistory = entry.Get<std::vector<std::pair<std::string,int>>>("statusHistory");
 //  std::vector<std::pair<std::string,int>> statusHistory = entry.Get("statusHistory");
     std::vector<std::pair<std::string,int>> statusHistory = entry["statusHistory"];
-    Info ("GetIter3", "Entry %d statusHistory(%lu) =", i, statusHistory.size());
+    Info ("GetIter3", "Entry %lld statusHistory(%lu) =", i, statusHistory.size());
     for (auto& p : statusHistory) {
       std::cout << "  '" << p.first << "': " << p.second << "\n";
     }
 
     std::vector<std::pair<std::string,int>> bad_vector = entry["bad_vector"];
-    Info ("GetIter3", "Entry %d bad_vector(%lu) =", i, bad_vector.size());
+    Info ("GetIter3", "Entry %lld bad_vector(%lu) =", i, bad_vector.size());
     for (auto& p : bad_vector) {
       std::cout << "  '" << p.first << "': " << p.second << "\n";
     }
@@ -469,11 +468,11 @@ TEST(iterTests3, GetIter) {
 //  TUUID uuid = entry.Get("uuid");
     TUUID uuid = entry["uuid"];
 
-    Info ("GetIter3", "Entry %d uuid:", i);
+    Info ("GetIter3", "Entry %lld uuid:", i);
     std::cout << "  "; uuid.Print();
     TUUID bad_uuid = entry["bad_uuid"];
 
-    Info ("GetIter3", "Entry %d bad_uuid:", i);
+    Info ("GetIter3", "Entry %lld bad_uuid:", i);
     std::cout << "  "; bad_uuid.Print();
 
     if (i >= 1) break;  // only need to test twice

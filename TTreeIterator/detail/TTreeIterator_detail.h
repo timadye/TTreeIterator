@@ -404,7 +404,7 @@ inline const T& TTreeIterator::SetValue (BranchInfo* ibranch, const char* name, 
 #endif
 #ifndef FEWER_CHECKS
       if (ibranch->pvalue && ibranch->pvalue != ibranch->GetValuePtr<V>()) {
-        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' object address changed from our @%p to @%p", name, ibranch->GetValuePtr<V>());
+        if (fVerbose >= 1) Info (tname<T>("Set"), "branch '%s' object address changed from our @%p to @%p", name, ibranch->GetValuePtr<V>(), ibranch->pvalue);
 #ifndef OVERRIDE_BRANCH_ADDRESS
         ibranch->puser = &ibranch->pvalue;
 #endif

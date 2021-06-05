@@ -110,7 +110,7 @@ struct ShowConstructors {
   void init() const                                      { Print ("%1$s(%2$s) @%3$p\n",this);       }
   ShowConstructors(const ShowConstructors& o)            { Print ("%1$s(%1$s(%2$s)) @%3$p\n",&o);   }
   ShowConstructors(      ShowConstructors&&o)            { Print ("%1$s(%1$s&&(%2$s)) @%3$p\n",&o); }
-  ShowConstructors(const ShowConstructors::quiet& q) {}  // default constructor, but without Print()
+  ShowConstructors(const ShowConstructors::quiet&) {}  // default constructor, but without Print()
   ~ShowConstructors()                                    { Print ("~%1$s(%2$s) @%3$p\n",this); skip=false; }
   void destroy() const                                   { Print ("~%1$s(%2$s) @%3$p\n",this); skip=true;  }
   ShowConstructors& operator=(const ShowConstructors& o) { Print ("%1$s = %1$s(%2$s) @%3$p\n",&o);   return *this; }
@@ -130,8 +130,8 @@ template <class T> bool ShowConstructors<T>::skip    = false;
 // A simple test ROOT object with instrumentation
 class TestObj : public TNamed, public ShowConstructors<TestObj> {
 public:
-  TestObj(Double_t v)                                         : TNamed(),            value(v), ShowConstructors(ShowConstructors::quiet()) { ShowConstructors::init(); }
-  TestObj(Double_t v, const char* name, const char* title="") : TNamed(name, title), value(v), ShowConstructors(ShowConstructors::quiet()) { ShowConstructors::init(); }
+  TestObj(Double_t v)                                         : TNamed(),            ShowConstructors(ShowConstructors::quiet()), value(v) { ShowConstructors::init(); }
+  TestObj(Double_t v, const char* name, const char* title="") : TNamed(name, title), ShowConstructors(ShowConstructors::quiet()), value(v) { ShowConstructors::init(); }
   ~TestObj() { ShowConstructors::destroy(); value=-3.0; }
   TestObj()                            = default;  // rule of 5
   TestObj(const TestObj& o)            = default;  // rule of 5

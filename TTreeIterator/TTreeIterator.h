@@ -75,8 +75,8 @@ public:
                             const TTreeIterator& >     // reference
   {
   public:
-    iterator (TTreeIterator& entry, Long64_t first, Long64_t last) : fEntry(entry), fIndex(first), fEnd(last) {}
-//  iterator (const iterator& in) : fEntry(in.fEntry), fIndex(in.fIndex), fEnd(in.fEnd) {}  // default probably OK
+    iterator (TTreeIterator& entry, Long64_t first, Long64_t last) : fIndex(first), fEnd(last), fEntry(entry) {}
+//  iterator (const iterator& in) : fIndex(in.fIndex), fEnd(in.fEnd), fEntry(in.fEntry) {}  // default probably OK
     ~iterator() { fEntry.reset(); }
     iterator& operator++() { ++fIndex; return *this; }
     iterator  operator++(int) { iterator it = *this; ++fIndex; return it; }
@@ -141,8 +141,8 @@ public:
   // Use given TTree
   TTreeIterator (TTree* tree, int verbose=0)
     : TNamed(tree ? tree->GetName() : "", tree ? tree->GetTitle() : ""),
-      fTree(tree),
       fIndex(tree ? tree->GetEntries() : 0),
+      fTree(tree),
       fVerbose(verbose)
   { Init(0,false); }
 

@@ -155,7 +155,7 @@ TEST(timingTests1, FillIter) {
 
   std::vector<std::string> bnames;
   bnames.reserve(nx1);
-  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
+  for (size_t i=0; i<nx1; i++) bnames.emplace_back (Form("x%03zu",i));
 
   TTreeIterator iter ("test", verbose);
   StartTimer timer (iter.GetTree(), true);
@@ -174,7 +174,7 @@ TEST(timingTests1, GetIter) {
 
   std::vector<std::string> bnames;
   bnames.reserve(nx1);
-  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
+  for (size_t i=0; i<nx1; i++) bnames.emplace_back (Form("x%03zu",i));
 
   TTreeIterator iter ("test", &file, verbose);
   ASSERT_TRUE(iter.GetTree()) << "no tree";
@@ -190,7 +190,7 @@ TEST(timingTests1, GetIter) {
       double x = entry[b.c_str()];
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",iter.index(),b.c_str());
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",iter.index(),b.c_str());
 #endif
     }
   }
@@ -204,7 +204,7 @@ TEST(timingTests1, GetIter2) {
 
   std::vector<std::string> bnames;
   bnames.reserve(nx1);
-  for (int i=0; i<nx1; i++) bnames.emplace_back (Form("x%03d",i));
+  for (size_t i=0; i<nx1; i++) bnames.emplace_back (Form("x%03zu",i));
 
   TTreeIterator iter ("test", &file, verbose);
   ASSERT_TRUE(iter.GetTree()) << "no tree";
@@ -232,7 +232,7 @@ TEST(timingTests1, GetIter2) {
       double x = entry[b.c_str()];
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",iter.index(),b.c_str());
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",iter.index(),b.c_str());
 #endif
     }
   }
@@ -248,7 +248,7 @@ TEST(timingTests1, FillAddr) {
   TTree tree("test","");
   std::vector<double> vals(nx1);
   StartTimer timer (&tree, true);
-  for (int i=0; i<nx1; i++) tree.Branch (Form("x%03d",i), &vals[i]);
+  for (size_t i=0; i<nx1; i++) tree.Branch (Form("x%03zu",i), &vals[i]);
 
   double v = vinit;
   for (Long64_t i = 0; i < nfill1; i++) {
@@ -256,6 +256,7 @@ TEST(timingTests1, FillAddr) {
     tree.Fill();
   }
   file.Write();
+  tree.ResetBranchAddresses();
 
   Int_t nbranches = ShowBranches (file, &tree, branch_type1, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill1), v);
@@ -273,7 +274,7 @@ TEST(timingTests1, GetAddr) {
 
   std::vector<double> vals(nx1);
   StartTimer timer (tree.get());
-  for (int i=0; i<nx1; i++) tree->SetBranchAddress (Form("x%03d",i), &vals[i]);
+  for (size_t i=0; i<nx1; i++) tree->SetBranchAddress (Form("x%03zu",i), &vals[i]);
 
   double v = vinit, vsum=0.0;
   Long64_t n = tree->GetEntries();
@@ -283,10 +284,11 @@ TEST(timingTests1, GetAddr) {
       double x = vx;
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vals.data());
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",i,&x-vals.data());
 #endif
     }
   }
+  tree->ResetBranchAddresses();
   double vn = double(nbranches*nfill1);
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
@@ -305,8 +307,8 @@ TEST(timingTests1, GetReader) {
   StartTimer timer (reader.GetTree());
   std::vector<TTreeReaderValue<Double_t>> vals;
   vals.reserve(nx1);
-  for (int i=0; i<nx1; i++)
-    vals.emplace_back (reader, Form("x%03d",i));
+  for (size_t i=0; i<nx1; i++)
+    vals.emplace_back (reader, Form("x%03zu",i));
 
   double v = vinit, vsum=0.0;
   while (reader.Next()) {
@@ -314,7 +316,7 @@ TEST(timingTests1, GetReader) {
       double x = *vx;
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, branch %d",reader.GetCurrentEntry(),vx.GetBranchName());
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",reader.GetCurrentEntry(),vx.GetBranchName());
 #endif
     }
   }
@@ -369,7 +371,7 @@ TEST(timingTests2, GetIter) {
     for (auto& x : M.x) {
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %d",iter.index(),&x-&M.x[0]);
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",iter.index(),&x-&M.x[0]);
 #endif
     }
   }
@@ -393,7 +395,7 @@ TEST(timingTests2, FillAddr) {
     tree.Fill();
   }
   file.Write();
-
+  tree.ResetBranchAddresses();
   Int_t nbranches = ShowBranches (file, &tree, branch_type2, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill2*nx2), v);
 }
@@ -419,10 +421,11 @@ TEST(timingTests2, GetAddr) {
     for (auto& x : M.x) {
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-&M.x[0]);
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",i,&x-&M.x[0]);
 #endif
     }
   }
+  tree->ResetBranchAddresses();
   double vn = double(nbranches*nfill2*nx2);
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
@@ -498,7 +501,7 @@ TEST(timingTests3, GetIter) {
     for (auto& x : vx) {
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %d",iter.index(),&x-vx.data());
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",iter.index(),&x-vx.data());
 #endif
     }
   }
@@ -523,6 +526,7 @@ TEST(timingTests3, FillAddr) {
     tree.Fill();
   }
   file.Write();
+  tree.ResetBranchAddresses();
 
   Int_t nbranches = ShowBranches (file, &tree, branch_type3, "filled");
   EXPECT_FLOAT_EQ (vinit+double(nbranches*nfill3*nx3), v);
@@ -549,10 +553,11 @@ TEST(timingTests3, GetAddr) {
     for (auto& x : *vx) {
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %d",i,&x-vx->data());
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",i,&x-vx->data());
 #endif
     }
   }
+  tree->ResetBranchAddresses();
   double vn = double(nbranches*nfill3*nx3);
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
 }
@@ -607,7 +612,7 @@ TEST(timingTests3, GetReader2) {
     for (auto& x : vx) {
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %d",reader.GetCurrentEntry(),&x-vx.data());
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",reader.GetCurrentEntry(),&x-vx.data());
 #endif
     }
   }
