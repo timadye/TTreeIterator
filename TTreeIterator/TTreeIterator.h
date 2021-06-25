@@ -23,6 +23,7 @@ class TDirectory;
 //#define NO_BranchInfo_STATS 1      // Don't keep stats for optimised BranchInfo lookup. Otherwise, prints in ~TTreeIterator if verbose.
 //#define USE_std_any 1              // use C++17's std::any, instead of Cpp11::any from detail/Cpp11_any.h
 //#define Cpp11_any_NOOPT 1          // don't use Cpp11::any's optimisations (mostly removing error checking)
+//#define NO_DICT 1                  // don't create TTreeIterator dictionary
 
 #if defined(USE_OrderedMap) && !defined(USE_map)
 # define USE_map 1
@@ -328,6 +329,14 @@ protected:
 #endif
          ) branch->ResetAddress();
     }
+    // delete unneeded initialisers so we don't accidentally call them
+    BranchInfo() = delete;
+    BranchInfo(BranchInfo&&) = delete;
+    BranchInfo& operator=(BranchInfo&&) = delete;
+    // need these initializers to use vector<BranchInfo>
+    BranchInfo(const BranchInfo&) = default;
+    BranchInfo& operator=(const BranchInfo&) = default;
+    ~BranchInfo() = default;
 #ifndef USE_map
     template <typename T> BranchInfo(const char* nam, type_code_t typ, T&& val, SetDefaultValue_t fd, SetValueAddress_t fa)
       : name(nam), type(typ), value (std::forward<T>(val)), SetDefaultValue(fd), SetValueAddress(fa) {}
@@ -390,7 +399,9 @@ protected:
   bool fOverrideBranchAddress=false;
 #endif
 
-  ClassDefOverride(TTreeIterator,0)
+#ifndef NO_DICT
+  ClassDefOverride(TTreeIterator,0);
+#endif
 };
 
 template<> inline float         TTreeIterator::type_default() { return std::numeric_limits<float      >::quiet_NaN(); }

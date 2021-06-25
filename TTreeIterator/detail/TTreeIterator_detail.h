@@ -410,7 +410,20 @@ inline const T& TTreeIterator::SetValue (BranchInfo* ibranch, const char* name, 
 #endif
       } else
 #endif
-        return ibranch->SetValue<T>(std::forward<T>(val));
+        if (!ibranch->pvalue) {
+//        if (fVerbose >= 3) Info (tname<T>("Set"), "branch '%s' assign value to @%p", name, ibranch->GetValuePtr<V>());
+          return ibranch->GetValue<V>() = std::forward<T>(val);
+        } else {
+          // This does std::any::emplace, which will reallocate the object if it is larger than sizeof(void*).
+          // So must adjust pvalue to point to the new address.
+          // In practice, this only occurs if PREFER_PTRPTR is defined.
+          T& setval = ibranch->SetValue<T>(std::forward<T>(val));
+          if (ibranch->pvalue != &setval) {
+//          if (fVerbose >= 3) Info (tname<T>("Set"), "branch '%s' object address changed when set from @%p to @%p", name, &setval, ibranch->pvalue);
+            ibranch->pvalue = &setval;
+          }
+          return setval;
+        }
 #ifndef OVERRIDE_BRANCH_ADDRESS
     }
     if (ibranch->isobj) {

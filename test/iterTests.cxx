@@ -30,7 +30,6 @@
 #define DO_ADDR
 #define DO_FILL
 #define DO_GET
-//#define DO_WAIT
 #define FULL_CHECKS
 
 const Long64_t nfill1 = 5;
@@ -38,7 +37,6 @@ const Long64_t nfill2 = 5;
 const Long64_t nfill22 = 3;
 const double vinit = 42.3;  // fill each element with a different value starting from here
 const double vinit2 = vinit+7*nfill2;
-const UInt_t wait_ms = 1000;
 const int verbose = 2;
 
 // ==========================================================================================
@@ -71,12 +69,6 @@ const int verbose = 2;
 #ifndef DO_GET
 #define GetIter   DISABLED_GetIter
 #define GetAddr   DISABLED_GetAddr
-#endif
-#ifndef DO_WAIT
-#define WaitIter  DISABLED_WaitIter
-#define WaitIter2 DISABLED_WaitIter2
-#define WaitAddr  DISABLED_WaitAddr
-#define WaitAddr2 DISABLED_WaitAddr2
 #endif
 
 // A simple user-defined POD class
@@ -182,11 +174,6 @@ TEST(iterTests1, FillIter) {
   Info ("FillIter1", "xsum = %g", xsum);  // compare with std::accumulate in AlgIter below
 }
 
-TEST(iterTests1, WaitIter) {
-  Info ("WaitIter", "sleep for %u ms", wait_ms);
-  gSystem->Sleep(wait_ms);
-}
-
 TEST(iterTests1, GetIter) {
   TFile f ("iterTests1.root");
   if (f.IsZombie()) { Error("iterTests1", "no file"); return; }
@@ -276,11 +263,6 @@ TEST(iterTests2, FillAddr) {
   tree.ResetBranchAddresses();
 }
 
-TEST(iterTests1, WaitAddr) {
-  Info ("WaitAddr", "sleep for %u ms", wait_ms);
-  gSystem->Sleep(wait_ms);
-}
-
 TEST(iterTests2, GetAddr) {
   ShowConstructors<MyStruct3>::verbose = verbose;
   ShowConstructors<TestObj>::verbose = verbose;
@@ -316,11 +298,6 @@ TEST(iterTests2, GetAddr) {
   tree->ResetBranchAddresses();
 }
 
-TEST(iterTests2, WaitAddr2) {
-  Info ("WaitAddr2", "sleep for %u ms", wait_ms);
-  gSystem->Sleep(wait_ms);
-}
-
 // ==========================================================================================
 // iterTests2 use TTreeIterator to test writing and reading some instrumented objects
 // to see construction and destruction
@@ -346,11 +323,6 @@ TEST(iterTests2, FillIter) {
   }
 }
 
-TEST(iterTests2, WaitIter) {
-  Info ("WaitIter1", "sleep for %u ms", wait_ms);
-  gSystem->Sleep(wait_ms);
-}
-
 TEST(iterTests2, FillIter2) {
   ShowConstructors<MyStruct3>::verbose = verbose;
   ShowConstructors<TestObj>::verbose = verbose;
@@ -366,11 +338,6 @@ TEST(iterTests2, FillIter2) {
     entry["o"] = TestObj(v,Form("n:%g",v),Form("t:%g",v)); v++;
     entry.Fill();
   }
-}
-
-TEST(iterTests2, WaitIter2) {
-  Info ("WaitIter2", "sleep for %u ms", wait_ms);
-  gSystem->Sleep(wait_ms);
 }
 
 TEST(iterTests2, GetIter) {
