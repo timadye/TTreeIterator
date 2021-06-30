@@ -274,7 +274,7 @@ private:
 protected:
 
   // BranchInfo definitions
-  class BranchInfo;
+  struct BranchInfo;
 #ifdef USE_OrderedMap
   template <typename K, typename V> using branch_map_type = OrderedMap<K,V>;
 #else
