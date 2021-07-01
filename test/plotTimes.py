@@ -12,6 +12,7 @@ def parseArgs():
   parser.add_option ("-i", "--interactive",  help="ROOT interactive mode", action="store_true")
   parser.add_option ("-o", "--output",       help="plot pdf file")
   parser.add_option ("-l", "--legends",      help="comma-separated list of legends")
+  parser.add_option ("-b", "--binning",      help="distribution histogram binning (nbins:tlo:thi)", default="25")
   opt, args= parser.parse_args()
   if not args:
     parser.print_help()
@@ -31,6 +32,11 @@ def process ():
   if not opt.interactive: ROOT.gROOT.SetBatch(True)
   ROOT.TH1.AddDirectory(0)
   legends = opt.legends.split(",") if opt.legends else []
+  nbins, tlo, thi = (opt.binning+":0:0").split(":")[0:3]
+  binning = opt.binning.split(":")
+  nbins =   int(binning[0]) if len(binning)>=1 else 25
+  tlo   = float(binning[1]) if len(binning)>=2 else 0.0
+  thi   = float(binning[2]) if len(binning)>=3 else 0.0
   trees = []
   nfiles = []
   add=False
@@ -84,49 +90,69 @@ def process ():
           labels[i].append(lab)
   labels = flat(labels)
 
-  hists = []
+  profiles = []
+  allhists = []
   for i,tree in enumerate(trees):
-    h = ROOT.TProfile ("hist_%d" % i, "%s;;ns / double" % tree.GetTitle(), len(labels), 0.0, float(len(labels)))
-    hists.append(h)
-    ax = h.GetXaxis()
+    p = ROOT.TProfile ("profile_%d" % i, "%s;;ns / double" % tree.GetTitle(), len(labels), 0.0, float(len(labels)))
+    hists = []
+    profiles.append(p)
+    ax = p.GetXaxis()
     for b,label in enumerate(labels):
       ax.SetBinLabel (b+1, label)
-    h.SetStats(0)
-    h.SetMinimum(0.0)
-    h.SetBarWidth(w)
-    h.SetMarkerSize (min (1.0, 3.5*w))
-    h.SetBarOffset(0.2 + 1.2*w*i)
-    h.SetFillColor(cols[i%len(cols)])
-    h.GetYaxis().SetTickLength(0.02)
+      h = ROOT.TH1D ("hist_%d_%d" % (i, b), "%s - %s;ns / double;" % (tree.GetTitle(), label), nbins, tlo, thi)
+      hists.append(h)
+    allhists.append(hists)
+    p.SetStats(0)
+    p.SetMinimum(0.0)
+    p.SetBarWidth(w)
+    p.SetMarkerSize (min (1.0, 3.5*w))
+    p.SetBarOffset(0.2 + 1.2*w*i)
+    p.SetFillColor(cols[i%len(cols)])
+    p.GetYaxis().SetTickLength(0.02)
     for e in tree:
       nval = e.entries * e.branches * e.elements
       print ("%s %s %s %-20s %s %-10s %1s %d %d %d %5g %5g (%d)" %
              (tree.GetTitle(), e.time, e.host, e.label, e.testcase, e.test, e.fill, e.entries, e.branches, e.elements, e.ms, e.cpu, nval))
-      if ax.FindBin(e.label) < 0:
+      b = ax.FindBin(e.label)
+      if b < 0:
         print("no bin",e.label)
         continue
-      h.Fill (e.label, 1000000.0 * e.ms / float(nval))
+      ns = 1000000.0 * e.ms / float(nval)
+      p.Fill (e.label, ns)
+      hists[b-1].Fill (ns)
 
   if legends:
     leg = ROOT.TLegend (0.7,0.9-0.025*nt,0.9,0.9)
     leg.SetFillStyle(0)
-  for i,h in enumerate(hists):
-    ax = h.GetXaxis()
-    for b in range(1,h.GetNbinsX()+1):
-      print ("%-10s %-20s %5.1f%s ns/double" % (h.GetTitle(), ax.GetBinLabel(b), h.GetBinContent(b), (" +/- %4.1f" % h.GetBinError(b)) if h.GetBinEntries(b)>1 else ""))
-    if not i: h.Draw("bar text0")
-    else:     h.Draw("bar text0 same")
-    if legends and i<len(legends): leg.AddEntry(h,legends[i],"f")
+  for i,p in enumerate(profiles):
+    ax = p.GetXaxis()
+    for b in range(1,p.GetNbinsX()+1):
+      print ("%-10s %-20s %5.1f%s ns/double" % (p.GetTitle(), ax.GetBinLabel(b), p.GetBinContent(b), (" +/- %4.1f" % p.GetBinError(b)) if p.GetBinEntries(b)>1 else ""))
+    if not i: p.Draw("bar text0")
+    else:     p.Draw("bar text0 same")
+    if legends and i<len(legends): leg.AddEntry(p,legends[i],"f")
   if legends: leg.Draw()
-  if opt.interactive: waitPlot()
-  else: ROOT.gPad.Print(opt.output)
+  printPlot (opt.output, opt.interactive, 1)
+  printPlot (opt.output, opt.interactive)
+  ROOT.gStyle.SetOptTitle(1)
+  for h in flat(allhists):
+    h.Draw()
+    printPlot (opt.output, opt.interactive)
+  printPlot (opt.output, opt.interactive, 2)
 
-
-def waitPlot():
+def printPlot (output, interactive=False, mult=0):
   if not ROOT.gPad: return
   canvas= ROOT.gPad.GetCanvas()
   if not canvas: return
-  print ("Double-click or press any key in window '"+canvas.GetTitle()+"' to continue...")
-  canvas.WaitPrimitive()
+  if mult:
+    if mult==1: canvas.Print(output+"[")
+    if mult==2: canvas.Print(output+"]")
+    return
+  canvas.Print(output)
+  if interactive:
+    canvas.Update()
+    print ("Double-click or press any key in window '"+canvas.GetTitle()+"' to continue...")
+    canvas.WaitPrimitive()
+  canvas.Clear()
 
 exit (process())

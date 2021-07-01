@@ -1,9 +1,17 @@
 #!/bin/bash
+base=$(basename "$0" .sh)
+dir=$(dirname $(readlink -e "$0" | sed 's=^/net/home/=/home/='))
+if [ -n "$1" ]; then
+  n="$1"
+  shift
+else
+  n=1
+fi
 if [ -n "$1" ]; then
   csv="$1"
   shift
 else
-  csv=$(basename "$0" .sh).csv
+  csv="$base.csv"
 fi
 defs=("$@")
 rm -f "$csv"
@@ -14,17 +22,25 @@ run() {
 }
 
 c() {
-  run ./maketiming.sh -DNO_BranchInfo_STATS=1 -DFAST_CHECKS=1 "${defs[@]}" "$@"
+  run ./maketiming2.sh -DNO_BranchInfo_STATS=1 -DFAST_CHECKS=1 "${defs[@]}" "$@"
+}
+
+tt() {
+  run env LABEL="$1" TIMELOG="$csv" PAD="$(printf "%$(($RANDOM % 4096))s" '' | tr ' ' .)" ./TestTiming --gtest_filter="$2"
 }
 
 t() {
-  run env LABEL="$1" TIMELOG="$csv" ./TestTiming --gtest_filter="$2"
+for i in $(seq $n); do
+  echo "==================== Test $1 $2 - #$i of $n ===================="
+  tt "$@"
+done
 }
 
 set -e
 run ./make.sh
 c
-run ./TestTiming --gtest_filter="timingTests3.FillAddr"
+run ./TestTiming --gtest_filter="timingTests3.FillIter"
+set +e
 
                                                  t 'SetBranchAddress' 'timingTests3.GetAddr'
                                                  t 'TTreeReaderArray' 'timingTests3.GetReader'
