@@ -2,6 +2,10 @@
 #define USE_Cpp11_any 1
 #define MYBENCH
 
+#if defined(USE_std_any) && (__cplusplus < 201703L)   // <version> not available until GCC9, so no way to check __cpp_lib_any without including <any>.
+# undef USE_std_any                  // only option is to use Cpp11::any
+#endif
+
 #ifdef USE_std_any
 # include <any>
 #endif
