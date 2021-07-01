@@ -113,7 +113,7 @@ def process ():
   for i,h in enumerate(hists):
     ax = h.GetXaxis()
     for b in range(1,h.GetNbinsX()+1):
-      print ("%-10s %-20s %5.1f%s ns/double" % (h.GetTitle(), ax.GetBinLabel(b), h.GetBinContent(b), (" +/- %4.1f" % h.GetBinError(b)) if nfiles[i]>=2 else ""))
+      print ("%-10s %-20s %5.1f%s ns/double" % (h.GetTitle(), ax.GetBinLabel(b), h.GetBinContent(b), (" +/- %4.1f" % h.GetBinError(b)) if h.GetBinEntries(b)>1 else ""))
     if not i: h.Draw("bar text0")
     else:     h.Draw("bar text0 same")
     if legends and i<len(legends): leg.AddEntry(h,legends[i],"f")
