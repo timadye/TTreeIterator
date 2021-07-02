@@ -9,7 +9,7 @@ if [ -n "$1" ]; then
 elif [ -z "$BUILD_TYPE" ]; then
   export BUILD_TYPE=Release
 fi
-SRCDIR="$(dirname $(readlink -f "$0" | sed 's=^/net/home/=/home/='))"
+SRCDIR=$(dirname $MAKE_SH)
 cd "$SRCDIR"
 mkdir -p "$BUILD_DIR" "$RUNDIR"
 [ -d $(basename "$BUILD_DIR") ] || ln -nfs "$BUILD_DIR" .
