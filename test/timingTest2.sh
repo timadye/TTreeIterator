@@ -42,10 +42,7 @@ set +e
 
                                                  t 'SetBranchAddress' 'timingTests2.GetAddr'
                                                  t 'TTreeReaderArray' 'timingTests2.GetReader'
-c -DUSE_std_any=1 -DUSE_map=1                  ; t 'map'              'timingTests2.GetIter'
-c -DUSE_std_any=1 -DUSE_OrderedMap             ; t 'map+vector'       'timingTests2.GetIter'
-c -DUSE_std_any=1                              ; t 'vector'           'timingTests2.GetIter'
-c                                              ; t 'std::any opt'     'timingTests2.GetIter'
+c                                              ; t 'TTreeIterator'    'timingTests2.GetIter'
 c -DFEWER_CHECKS=1 -DOVERRIDE_BRANCH_ADDRESS=1 ; t 'no checks'        'timingTests2.GetIter'
 
 run ./maketiming.sh

@@ -9,15 +9,9 @@
 #include "TFile.h"
 #include "TChain.h"
 
-#ifdef USE_map
-#define USE_MAP_EMPLACE 1  // use map::emplace instead of map::insert, which is probably a good idea but probably makes little difference
-#endif
-
 
 inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=true*/) {
-#ifndef USE_map
   fBranches.reserve (200);   // when we reallocate, SetBranchAddress will be invalidated so have to fix up each time
-#endif
   if (!owned) {
     SetBranchStatusAll(false);
   } else {
@@ -125,24 +119,14 @@ inline /*virtual*/ Int_t TTreeIterator::Fill() {
 
 #ifndef NO_FILL_UNSET_DEFAULT
   for (auto& b : fBranches) {
-#ifndef USE_map
     BranchInfo* ibranch = &b;
-#else
-    BranchInfo* ibranch = &b.second;
-#endif
     if (ibranch->set
 #ifndef OVERRIDE_BRANCH_ADDRESS
         && !ibranch->puser
 #endif
        ) {
       if (ibranch->unset)
-        (*ibranch->SetDefaultValue) (*this, ibranch,
-#ifndef USE_map
-                                     b.name.c_str()
-#else
-                                     b.first.first.c_str()
-#endif
-                                    );
+        (*ibranch->SetDefaultValue) (*this, ibranch, b.name.c_str());
       else ibranch->unset = true;
     }
   }
@@ -184,16 +168,8 @@ inline Int_t TTreeIterator::Write (const char* name/*=0*/, Int_t option/*=0*/, I
 
 inline /*virtual*/ void TTreeIterator::reset() {
   fIndex = 0;
-#if !defined(USE_map) || (defined(USE_OrderedMap) && defined(__cpp_lib_make_reverse_iterator))
   for (auto it = fBranches.rbegin(); it != fBranches.rend(); ++it) {
-#else
-  for (auto it = fBranches. begin(); it != fBranches. end(); ++it) {
-#endif
-#ifndef USE_map
     BranchInfo& ibranch = *it;
-#else
-    BranchInfo& ibranch = it->second;
-#endif
     ibranch.ResetAddress();
     ibranch.EnableReset();
   }
@@ -337,7 +313,6 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranch(const char* name) con
 
 
 inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name, type_code_t type) const {
-#ifndef USE_map
   if (fTryLast) {
     ++fLastBranch;
     if (fLastBranch == fBranches.end()) fLastBranch = fBranches.begin();
@@ -363,11 +338,6 @@ inline TTreeIterator::BranchInfo* TTreeIterator::GetBranchInfo (const char* name
   }
   fTryLast = false;
   return nullptr;
-#else
-  auto it = fBranches.find ({name, type});
-  if (it == fBranches.end()) return nullptr;
-  return &it->second;
-#endif
 }
 
 
@@ -509,28 +479,10 @@ inline TTreeIterator::BranchInfo* TTreeIterator::NewBranch (const char* name, T&
 template <typename T>
 inline TTreeIterator::BranchInfo* TTreeIterator::SetBranchInfo (const char* name, T&& val) const {
   using V = remove_cvref_t<T>;
-#ifndef USE_map
   BranchInfo* front = &fBranches.front();
   fBranches.emplace_back (name, type_code<T>(), std::forward<T>(val), &SetDefaultValue<V>, &SetValueAddress<V>);
   if (front != &fBranches.front()) SetBranchAddressAll("SetBranchInfo");  // vector data() moved
-  BranchInfo* ibranch = &fBranches.back();
-#else
-#ifdef USE_MAP_EMPLACE
-  auto ret = fBranches.emplace (std::piecewise_construct, std::forward_as_tuple(name, type_code<T>()), std::forward_as_tuple(std::forward<T>(val), &SetDefaultValue<V>));
-#else
-  auto ret = fBranches.insert  ({{name, type_code<T>()}, {std::forward<T>(val), &SetDefaultValue<V>}});
-#endif
-  BranchInfo* ibranch = &ret.first->second;
-#ifndef FEWER_CHECKS
-  if (!ret.second) {
-    if (fVerbose >= 1) Info ("SetBranchInfo", "somehow we have already saved branch '%s' info", name);
-#ifndef USE_MAP_EMPLACE
-    ibranch->SetValue<T>(std::forward<T>(val));
-#endif
-  }
-#endif
-#endif
-  return ibranch;
+  return &fBranches.back();
 }
 
 
@@ -596,7 +548,6 @@ inline /*static*/ bool TTreeIterator::SetValueAddress (const TTreeIterator& tt, 
 }
 
 
-#ifndef USE_map
 inline void TTreeIterator::SetBranchAddressAll (const char* call) const {
   if (fVerbose >= 1) Info  (call, "cache reallocated, so need to set all branch addresses again");
   for (auto& b : fBranches) {
@@ -609,7 +560,6 @@ inline void TTreeIterator::SetBranchAddressAll (const char* call) const {
     }
   }
 }
-#endif
 
 
 template <typename T>

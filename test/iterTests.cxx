@@ -97,42 +97,6 @@ struct MyStruct3 : public MyStruct, public ShowConstructors<MyStruct3> {
 };
 template<> MyStruct3 TTreeIterator::type_default() { return MyStruct3(-2.0,-2.0,-2.0,-2); }
 
-#ifdef USE_OrderedMap
-TEST(mapTests, map1) {
-  OrderedMap<std::string,double> m;
-  m.insert({"xy",2.1});
-  m.insert({"ab",3.2});
-  m.insert({"cd",4.3});
-  for (auto it : m) {
-    std::cout << it.first << ':' << it.second << ' ';
-  }
-  std::cout << '\n';
-#ifdef __cpp_lib_make_reverse_iterator
-  for (auto it = m.rbegin(); it != m.rend(); ++it) {
-    std::cout << it->first << ':' << it->second << ' ';
-  }
-#endif
-  std::cout << '\n';
-  std::cout << "m[cd] = " << m["cd"] << '\n';
-  std::cout << "m[ef] = " << m["ef"] << '\n';
-}
-#else
-#define mapTests DISABLED_mapTests
-#endif
-
-TEST(mapTests, map2) {
-  std::map<std::string,double> m;
-  m.insert({"xy",2.1});
-  m.insert({"ab",3.2});
-  m.insert({"cd",4.3});
-  for (auto& it : m) {
-    std::cout << it.first << ':' << it.second << ' ';
-  }
-  std::cout << '\n';
-  std::cout << "m[cd] = " << m["cd"] << '\n';
-  std::cout << "m[ef] = " << m["ef"] << '\n';
-}
-
 
 // ==========================================================================================
 // iterTests1 use TTreeIterator to test writing and reading various types to a TTree.
