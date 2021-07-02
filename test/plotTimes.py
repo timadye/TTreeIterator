@@ -111,8 +111,8 @@ def process ():
     p.GetYaxis().SetTickLength(0.02)
     for e in tree:
       nval = e.entries * e.branches * e.elements
-      print ("%s %s %s %-20s %s %-10s %1s %d %d %d %5g %5g (%d)" %
-             (tree.GetTitle(), e.time, e.host, e.label, e.testcase, e.test, e.fill, e.entries, e.branches, e.elements, e.ms, e.cpu, nval))
+      print ("%s %s %s %-20s %s %-10s %1d %d %d %d %5g %5g (%d)" %
+             (tree.GetTitle(), e.time, e.host, e.label, e.testcase, e.test, ord(e.fill), e.entries, e.branches, e.elements, e.ms, e.cpu, nval))
       b = ax.FindBin(e.label)
       if b < 0:
         print("no bin",e.label)
