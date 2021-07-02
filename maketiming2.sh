@@ -1,3 +1,4 @@
+#!/bin/bash
 PROG=timingTests
 EXE=TestTiming
 OFLAG="2" SZC=0 SZCFLAGS=() OPTS=()
@@ -11,6 +12,7 @@ for o in "$@"; do
 done
 OPTS+=("-O$OFLAG")
       
+SRCDIR="$(dirname $(readlink -f "$0" | sed 's=^/net/home/=/home/='))"
 if [ $SZC -ne 0 -o "${#SZCFLAGS[@]}" -gt 0 ]; then
   shift
   [ "${#SZCFLAGS[@]}" -le 0 ] && SZCFLAGS=(-Rheap -Rstack -Rlink)
@@ -22,12 +24,10 @@ fi
 EXEOUT=$(readlink -e "$EXE")
 [ -z "$EXEOUT" ] && EXEOUT=$EXE
 
-SRCDIR="$(dirname $(readlink -f "$0" | sed 's=^/net/home/=/home/='))"
 CXXFLAGS="$(root-config --cflags) -I$SRCDIR/TTreeIterator -DNO_DICT=1"
 LDFLAGS="$(root-config --ldflags --libs) -O2 -L$BUILD_DIR/lib -lgtest"
 
 set -x
-[ -z "$STABILIZER" ] && . "$SRCDIR/../stabilizer/setup-base.sh"
 mkdir -p obj
 rm -f $EXEOUT obj/$PROG
 $CXX -c -o obj/$PROG.o      "$SRCDIR/TTreeIterator/test/$PROG.cxx"                         $CXXFLAGS "${OPTS[@]}" || exit

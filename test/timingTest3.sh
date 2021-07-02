@@ -1,18 +1,16 @@
 #!/bin/bash
 base=$(basename "$0" .sh)
 dir=$(dirname $(readlink -e "$0" | sed 's=^/net/home/=/home/='))
-if [ -n "$1" ]; then
+if [ $# -ge 1 ]; then
   n="$1"
   shift
-else
-  n=1
 fi
-if [ -n "$1" ]; then
+[ -z "$n" ] && n=1
+if [ $# -ge 1 ]; then
   csv="$1"
   shift
-else
-  csv="$base.csv"
 fi
+[ -z "$csv" ] && csv="$base.csv"
 defs=("$@")
 rm -f "$csv"
 
