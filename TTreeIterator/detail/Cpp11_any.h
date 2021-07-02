@@ -8,7 +8,7 @@
 #define NO_ANY_ACCESS 1      // don't include any::Manager<T>::manage(Op_access) method - not ABI compatible with std::any
 #define UNCHECKED_ANY 1      // don't check type of any_cast<T>(any)             - not standard conforming
 #define NO_ANY_EXCEPTIONS 1  // don't throw exceptions                           - not standard conforming
-#define ANY_SAME_TYPE 1      // when assigning the same as existing type, don't recreate
+//#define ANY_SAME_TYPE 1      // when assigning the same as existing type, don't recreate - incompatible with constructor exception; possible undefined behaviour
 #endif
 
 //#define Cpp11_std_any 1
