@@ -136,6 +136,7 @@ def process ():
   printPlot (opt.output, opt.interactive)
   ROOT.gStyle.SetOptTitle(1)
   for h in flat(allhists):
+    if h.GetEntries() == 0: continue
     h.Draw()
     printPlot (opt.output, opt.interactive)
   printPlot (opt.output, opt.interactive, 2)

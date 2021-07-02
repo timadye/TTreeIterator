@@ -8,6 +8,7 @@
 #define NO_ANY_ACCESS 1      // don't include any::Manager<T>::manage(Op_access) method - not ABI compatible with std::any
 #define UNCHECKED_ANY 1      // don't check type of any_cast<T>(any)             - not standard conforming
 #define NO_ANY_EXCEPTIONS 1  // don't throw exceptions                           - not standard conforming
+#define ANY_SAME_TYPE 1      // when assigning the same as existing type, don't recreate
 #endif
 
 //#define Cpp11_std_any 1
@@ -33,6 +34,7 @@
 #if !__cpp_exceptions
 # define NO_ANY_EXCEPTIONS 1
 #endif
+#undef UNCHECKED_ANY_CONSTEXPR
 #ifdef __cpp_if_constexpr
 # define Cpp11_constexpr_if constexpr
 #else
@@ -224,7 +226,15 @@ namespace Cpp11
     template<typename T>
     typename std::enable_if<std::is_copy_constructible<Decay_if_not_any<T>>::value, any&>::type
     operator=(T&& rhs) {
-      *this = any(std::forward<T>(rhs));
+#ifdef ANY_SAME_TYPE
+      using V = typename std::decay<T>::type;
+      if (_manager == &any::Manager<V>::manage) {
+        V* ptr = unchecked_any_caster<V>();
+        ptr->~V();
+        ::new(ptr) V(std::forward<T>(rhs));
+      } else
+#endif
+        *this = any(std::forward<T>(rhs));
       return *this;
     }
 
@@ -232,6 +242,14 @@ namespace Cpp11
     template <typename T, typename... Args>
     emplace_t<typename std::decay<T>::type, Args...> emplace(Args&&... args) {
       using V = typename std::decay<T>::type;
+#ifdef ANY_SAME_TYPE
+      if (_manager == &any::Manager<V>::manage) {
+        V* ptr = unchecked_any_caster<V>();
+        ptr->~V();
+        ::new(ptr) V(std::forward<Args>(args)...);
+        return *ptr;
+      }
+#endif
       do_emplace<V>(std::forward<Args>(args)...);
       return *unchecked_any_caster<V>();
     }
@@ -240,6 +258,14 @@ namespace Cpp11
     template <typename T, typename Up, typename... Args>
     emplace_t<typename std::decay<T>::type, std::initializer_list<Up>, Args&&...> emplace(std::initializer_list<Up> il, Args&&... args) {
       using V = typename std::decay<T>::type;
+#ifdef ANY_SAME_TYPE
+      if (_manager == &any::Manager<V>::manage) {
+        V* ptr = unchecked_any_caster<V>();
+        ptr->~V();
+        ::new(ptr) V(il, std::forward<Args>(args)...);
+        return *ptr;
+      }
+#endif
       do_emplace<V, Up>(il, std::forward<Args>(args)...);
       return *unchecked_any_caster<V>();
     }
