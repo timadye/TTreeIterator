@@ -103,7 +103,7 @@ inline /*static*/ void TTreeIterator::BranchInfo::SetDefaultValue (BranchInfo* i
 }
 
 
-inline Int_t TTreeIterator::Entry_iterator::Fill() {
+inline Int_t TTreeIterator::Entry::Fill() {
   TTree* t = GetTree();
   if (!t) return 0;
 
@@ -125,7 +125,7 @@ inline Int_t TTreeIterator::Entry_iterator::Fill() {
   Int_t nbytes = t->Fill();
 
   if (nbytes >= 0) {
-    fTotFill += nbytes;
+    iter().fTotFill += nbytes;
     if (verbose() >= 2) {
       std::string allbranches = tree().BranchNamesString();
       tree().Info  ("Fill", "Filled %d bytes for entry %lld, branches: %s", nbytes, fIndex, allbranches.c_str());
@@ -137,7 +137,7 @@ inline Int_t TTreeIterator::Entry_iterator::Fill() {
     }
   }
 
-  if (nbytes > 0) fWriting = true;
+  if (nbytes > 0) iter().fWriting     = true;
 
   return nbytes;
 }
@@ -159,14 +159,18 @@ inline Int_t TTreeIterator::Fill_iterator::Write (const char* name/*=0*/, Int_t 
 inline TTreeIterator::Entry_iterator::~Entry_iterator() {
   if (verbose() >= 1) {
 #ifndef NO_BranchInfo_STATS
-    if (nhits || nmiss)
-      tree().Info ("TTreeIterator", "GetBranchInfo optimisation had %lu hits, %lu misses, %.1f%% success rate", nhits, nmiss, double(100*nhits)/double(nhits+nmiss));
+    if (fNhits || fNmiss)
+      tree().Info ("TTreeIterator", "GetBranchInfo optimisation had %lu hits, %lu misses, %.1f%% success rate", fNhits, fNmiss, double(100*fNhits)/double(fNhits+fNmiss));
 #endif
     if (fTotFill>0 || fTotWrite>0)
       tree().Info ("TTreeIterator", "filled %lld bytes total; wrote %lld bytes at end", fTotFill, fTotWrite);
     if (fTotRead>0)
       tree().Info ("TTreeIterator", "read %lld bytes total", fTotRead);
   }
+}
+
+
+inline TTreeIterator::Entry::~Entry() {
   for (auto ibranch = fBranches.rbegin(); ibranch != fBranches.rend(); ++ibranch) {
     ibranch->ResetAddress();
     ibranch->EnableReset();
@@ -204,7 +208,7 @@ inline TTreeIterator::Fill_iterator TTreeIterator::FillEntries (Long64_t nfill/*
 
 
 template <typename T>
-inline TBranch* TTreeIterator::Entry_iterator::Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
+inline TBranch* TTreeIterator::Entry::Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
   if (!GetTree()) {
     if (verbose() >= 0) tree().Error (tname<T>("Branch"), "no tree available");
     return nullptr;
@@ -218,7 +222,7 @@ inline TBranch* TTreeIterator::Entry_iterator::Branch (const char* name, const c
 
 template <typename T>
 inline const T& TTreeIterator::Entry::Get(const char* name, const T& def) const {
-  if (BranchInfo* ibranch = iter().GetBranch<T>(name))
+  if (BranchInfo* ibranch = GetBranch<T>(name))
     return ibranch->Get<T>(def);
   else
     return def;
@@ -265,10 +269,10 @@ inline const T* TTreeIterator::BranchInfo::GetBranchValue() const {
 template <typename T>
 inline const T& TTreeIterator::Entry::Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
   using V = remove_cvref_t<T>;
-  if (BranchInfo* ibranch = iter().GetBranchInfo<T> (name)) {
+  if (BranchInfo* ibranch = GetBranchInfo<T> (name)) {
     return ibranch->Set<T>(std::forward<T>(val));
   }
-  BranchInfo* ibranch = iter().NewBranch<T> (name, std::forward<T>(val), leaflist, bufsize, splitlevel);
+  BranchInfo* ibranch = NewBranch<T> (name, std::forward<T>(val), leaflist, bufsize, splitlevel);
   if (!ibranch) return default_value<V>();
   return ibranch->GetValue<V>();
 }
@@ -295,7 +299,7 @@ inline /*static*/ const char* TTreeIterator::tname(const char* name/*=0*/) {
 
 
 template <typename T>
-inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranch(const char* name) const {
+inline TTreeIterator::BranchInfo* TTreeIterator::Entry::GetBranch(const char* name) const {
   if (index() < 0) return nullptr;
   BranchInfo* ibranch = GetBranchInfo<T> (name);
   if (ibranch) return ibranch;
@@ -314,7 +318,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranch(const
     } else if (nread == 0) {
       if (verbose() >= 0) tree().Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
     } else {
-      fTotRead += nread;
+      iter().fTotRead += nread;
       if (verbose() >= 1) tree().Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
       return ibranch;
     }
@@ -325,7 +329,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranch(const
 }
 
 
-inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranchInfo (const char* name, type_code_t type) const {
+inline TTreeIterator::BranchInfo* TTreeIterator::Entry::GetBranchInfo (const char* name, type_code_t type) const {
   const std::string sname = name;
   if (fTryLast) {
     ++fLastBranch;
@@ -333,7 +337,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranchInfo (
     BranchInfo& b = *fLastBranch;
     if (b.fType == type && b.fName == sname) {
 #ifndef NO_BranchInfo_STATS
-      ++nhits;
+      ++iter().fNhits;
 #endif
       return &b;
     }
@@ -345,7 +349,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranchInfo (
       fTryLast = true;
       fLastBranch = ib;
 #ifndef NO_BranchInfo_STATS
-      ++nmiss;
+      ++iter().fNmiss;
 #endif
       return &b;
     }
@@ -356,7 +360,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranchInfo (
 
 
 template <typename T>
-inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::GetBranchInfo (const char* name) const {
+inline TTreeIterator::BranchInfo* TTreeIterator::Entry::GetBranchInfo (const char* name) const {
   using V = remove_cvref_t<T>;
   BranchInfo* ibranch = GetBranchInfo (name, type_code<T>());
   if (!ibranch) return ibranch;
@@ -424,7 +428,7 @@ inline const T& TTreeIterator::BranchInfo::Set(T&& val) {
 
 
 template <typename T>
-inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
+inline TTreeIterator::BranchInfo* TTreeIterator::Entry::NewBranch (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
   using V = remove_cvref_t<T>;
   TBranch* branch = GetTree() ? GetTree()->GetBranch(name) : nullptr;
   Long64_t nentries = (branch ? branch->GetEntries() : 0);
@@ -478,7 +482,7 @@ inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::NewBranch (cons
     ibranch->fBranch = branch;
     ibranch->fSet = true;
   }
-  fWriting = true;
+  iter().fWriting     = true;
   if (index() > nentries) {
     if (verbose() >= 1) tree().Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, index());
     for (Long64_t i = nentries; i < index(); i++) {
@@ -491,10 +495,11 @@ inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::NewBranch (cons
 
 
 template <typename T>
-inline TTreeIterator::BranchInfo* TTreeIterator::Entry_iterator::SetBranchInfo (const char* name, T&& val) const {
+inline TTreeIterator::BranchInfo* TTreeIterator::Entry::SetBranchInfo (const char* name, T&& val) const {
   using V = remove_cvref_t<T>;
+  fBranches.reserve (200);   // when we reallocate, SetBranchAddress will be invalidated so have to fix up each time. This is ignored after the first call.
   BranchInfo* front = &fBranches.front();
-  fBranches.emplace_back (name, type_code<V>(), std::forward<T>(val), *const_cast<Entry_iterator*>(this), &BranchInfo::SetDefaultValue<V>, &BranchInfo::SetValueAddress<V>);
+  fBranches.emplace_back (name, type_code<V>(), std::forward<T>(val), *const_cast<Entry*>(this), &BranchInfo::SetDefaultValue<V>, &BranchInfo::SetValueAddress<V>);
   if (front != &fBranches.front()) SetBranchAddressAll("SetBranchInfo");  // vector data() moved
   return &fBranches.back();
 }
@@ -562,7 +567,7 @@ inline /*static*/ bool TTreeIterator::BranchInfo::SetValueAddress (BranchInfo* i
 }
 
 
-inline void TTreeIterator::Entry_iterator::SetBranchAddressAll (const char* call) const {
+inline void TTreeIterator::Entry::SetBranchAddressAll (const char* call) const {
   if (verbose() >= 1) tree().Info  (call, "cache reallocated, so need to set all branch addresses again");
   for (auto& b : fBranches) {
     if (b.fSetValueAddress && b.fSet
@@ -577,11 +582,11 @@ inline void TTreeIterator::Entry_iterator::SetBranchAddressAll (const char* call
 
 
 template <typename T>
-inline Int_t TTreeIterator::Entry_iterator::FillBranch (TBranch* branch, const char* name) {
+inline Int_t TTreeIterator::Entry::FillBranch (TBranch* branch, const char* name) {
   Int_t nbytes = branch->Fill();
   if (nbytes > 0) {
-    fTotFill += nbytes;
-    fWriting = true;
+    iter().fTotFill += nbytes;
+    iter().fWriting = true;
     if (verbose() >= 2) tree().Info  (tname<T>("Set"), "filled branch '%s' with %d bytes for entry %lld", name, nbytes, index());
   } else if (nbytes == 0) {
     if (verbose() >= 0) tree().Error (tname<T>("Set"), "no data filled in branch '%s' for entry %lld",    name,         index());

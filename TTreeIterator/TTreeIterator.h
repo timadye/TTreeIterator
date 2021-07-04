@@ -58,7 +58,7 @@ public:
   using type_code_t = std::size_t;
   template<typename T> static constexpr type_code_t type_code() { return typeid(T).hash_code(); }
 #endif
-  
+
   class Entry;
   class Entry_iterator;
   class Fill_iterator;
@@ -83,11 +83,12 @@ public:
     template <typename T> const T& Get(const T& def) const;
     template <typename T> const T& Set(T&& val);
 
-    Long64_t         index()   const { return fIter.index();   }
-    int              verbose() const { return fIter.verbose(); }
-    Entry_iterator&  iter()    const { return fIter;           }
-    TTreeIterator&   tree()    const { return fIter.tree();    }
-    TTree*           GetTree() const { return fIter.GetTree(); }
+    Long64_t         index()   const { return fEntry.index();   }
+    int              verbose() const { return fEntry.verbose(); }
+    Entry&           entry()   const { return fEntry;           }
+    Entry_iterator&  iter()    const { return fEntry.iter();    }
+    TTreeIterator&   tree()    const { return fEntry.tree();    }
+    TTree*           GetTree() const { return fEntry.GetTree(); }
 
   protected:
     friend Entry_iterator;
@@ -106,7 +107,7 @@ public:
     mutable void**   fPuser  = nullptr;
 #endif
     TBranch* fBranch = nullptr;
-    Entry_iterator& fIter;
+    Entry&   fEntry;
     SetDefaultValue_t fSetDefaultValue = 0;  // function to set value to the default
     SetValueAddress_t fSetValueAddress = 0;  // function to set the address again
     bool     fSet    = false;
@@ -134,8 +135,8 @@ public:
     // need these initializers to use vector<BranchInfo>
     BranchInfo(const BranchInfo&) = default;
     ~BranchInfo() = default;
-    template <typename T> BranchInfo(const char* name, type_code_t type, T&& value, Entry_iterator& iter, SetDefaultValue_t fd, SetValueAddress_t fa)
-      : fName(name), fType(type), fValue (std::forward<T>(value)), fIter(iter), fSetDefaultValue(fd), fSetValueAddress(fa) {}
+    template <typename T> BranchInfo(const char* name, type_code_t type, T&& value, Entry& entry, SetDefaultValue_t fd, SetValueAddress_t fa)
+      : fName(name), fType(type), fValue (std::forward<T>(value)), fEntry(entry), fSetDefaultValue(fd), fSetValueAddress(fa) {}
   protected:
     template <typename T>       T& SetValue(T&& value) { return fValue.emplace<T>(std::forward<T>(value)); }
     template <typename T> const T& GetValue()    const { return any_namespace::any_cast<T&>(fValue); }
@@ -212,7 +213,8 @@ public:
     using size_type   = std::size_t;
     using difference_type = std::ptrdiff_t;
 
-    Entry (Entry_iterator& iter, Long64_t index) : fIndex(index), fIter(iter) {}
+    Entry (Entry_iterator& iter, Long64_t index=0) : fIndex(index), fIter(iter) {}
+    ~Entry();
 
     Getter Get        (const char* name) const { return Getter(*this,name); }
     Getter operator[] (const char* name) const { return Getter(*this,name); }
@@ -247,7 +249,12 @@ public:
     BranchInfo_iterator begin () { return BranchInfo_iterator (fEntry, fIndex, fEnd); }
     BranchInfo_iterator end ()   { return BranchInfo_iterator (fEntry, fEnd,   fEnd); }
     */
-    Int_t Fill() { return iter().Fill(); }
+    Int_t GetEntry (Int_t getall=0) {
+      Int_t nbytes = tree().GetEntry (fIndex, getall);
+      if (nbytes>0) iter().fTotRead += nbytes;
+      return nbytes;
+    }
+    Int_t Fill();  // not in Fill_iterator, so accessible from Entry
 
     Long64_t          index()   const { return fIndex;          }
     int               verbose() const { return fIter.verbose(); }
@@ -259,47 +266,6 @@ public:
     friend Entry_iterator;
     friend Fill_iterator;
     friend BranchInfo;
-    Long64_t fIndex;
-    Entry_iterator& fIter;
-  };
-
-  // ===========================================================================
-  // Interface to std::iterator to allow range-based for loop
-  class Entry_iterator
-    : public std::iterator< std::forward_iterator_tag, // iterator_category   [could easily be random_access_iterator if we implemented the operators]
-                            Entry,                     // value_type
-                            Long64_t,                  // difference_type
-                            const Entry*,              // pointer
-                            const Entry& >             // reference
-  {
-  public:
-
-    Entry_iterator (TTreeIterator& treeI, Long64_t first, Long64_t last) : fIndex(first), fEnd(last), fTreeI(treeI), fEntry(*this,0) {
-      fBranches.reserve (200);   // when we reallocate, SetBranchAddress will be invalidated so have to fix up each time
-    }
-//  Entry_iterator (const Entry_iterator& in) : fIndex(in.fIndex), fEnd(in.fEnd), fTreeI(in.fTreeI) {}  // default probably OK
-    ~Entry_iterator();
-    Entry_iterator& operator++() { ++fIndex; return *this; }
-    Entry_iterator  operator++(int) { Entry_iterator it = *this; ++fIndex; return it; }
-    bool operator!= (const Entry_iterator& other) const { return fIndex != other.fIndex; }
-    bool operator== (const Entry_iterator& other) const { return fIndex == other.fIndex; }
-    Entry& operator*() const { GetEntry(); fEntry.fIndex = fIndex; return fEntry; }
-    Long64_t last() { return fEnd; }
-
-    Int_t GetEntry (Int_t getall=0) const {
-      Int_t nbytes = tree().GetEntry (fIndex < fEnd ? fIndex : -1, getall);
-      if (nbytes>0) fTotRead += nbytes;
-      return nbytes;
-    }
-    Int_t Fill();  // not in Fill_iterator, so accessible from Entry
-
-    Long64_t       index()   const { return fIndex;           }
-    int            verbose() const { return tree().fVerbose;  }
-    TTreeIterator& tree()    const { return fTreeI;           }
-    TTree*         GetTree() const { return tree().GetTree(); }
-
-  protected:
-    friend Entry;
 
     template <typename T> BranchInfo* GetBranch     (const char* name) const;
     template <typename T> BranchInfo* GetBranchInfo (const char* name) const;
@@ -317,16 +283,50 @@ public:
     template <typename T> TBranch* Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel);
 
     Long64_t fIndex;
+    Entry_iterator& fIter;
+
+    mutable std::vector<BranchInfo> fBranches;
+    mutable std::vector<BranchInfo>::iterator fLastBranch;
+    mutable bool fTryLast = false;
+  };
+
+  // ===========================================================================
+  // Interface to std::iterator to allow range-based for loop
+  class Entry_iterator
+    : public std::iterator< std::forward_iterator_tag, // iterator_category   [could easily be random_access_iterator if we implemented the operators]
+                            Entry,                     // value_type
+                            Long64_t,                  // difference_type
+                            const Entry*,              // pointer
+                            const Entry& >             // reference
+  {
+  public:
+
+    Entry_iterator (TTreeIterator& treeI, Long64_t first, Long64_t last) : fIndex(first), fEnd(last), fTreeI(treeI), fEntry(*this,0) {}
+//  Entry_iterator (const Entry_iterator& in) : fIndex(in.fIndex), fEnd(in.fEnd), fTreeI(in.fTreeI) {}  // default probably OK
+    ~Entry_iterator();
+    Entry_iterator& operator++() { ++fIndex; return *this; }
+    Entry_iterator  operator++(int) { Entry_iterator it = *this; ++fIndex; return it; }
+    bool operator!= (const Entry_iterator& other) const { return fIndex != other.fIndex; }
+    bool operator== (const Entry_iterator& other) const { return fIndex == other.fIndex; }
+    const Entry& operator*() const { fEntry.fIndex = fIndex < fEnd ? fIndex : -1; fEntry.GetEntry(); return fEntry; }
+    Long64_t last() { return fEnd; }
+
+    Long64_t       index()   const { return fIndex;           }
+    int            verbose() const { return tree().fVerbose;  }
+    TTreeIterator& tree()    const { return fTreeI;           }
+    TTree*         GetTree() const { return tree().GetTree(); }
+
+  protected:
+    friend Entry;
+
+    Long64_t fIndex;
     const Long64_t fEnd;
     TTreeIterator& fTreeI;
     mutable Entry fEntry;   // local copy so we can return it by reference
 
     mutable ULong64_t fTotFill=0, fTotWrite=0, fTotRead=0;
-    mutable std::vector<BranchInfo> fBranches;
-    mutable std::vector<BranchInfo>::iterator fLastBranch;
-    mutable bool fTryLast = false;
 #ifndef NO_BranchInfo_STATS
-    mutable size_t nhits=0, nmiss=0;
+    mutable size_t fNhits=0, fNmiss=0;
 #endif
     bool fWriting=false;
   };
