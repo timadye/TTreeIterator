@@ -180,12 +180,12 @@ TEST(iterTests1, AlgIter) {
 
   TTreeIterator iter ("test", &f, verbose);
   auto sum = std::accumulate (iter.begin(), iter.end(), 0.0,
-                              [](double s, const TTreeIterator& entry) { return s + entry.Get<double>("x"); });
+                              [](double s, const TTreeIterator::Entry& entry) { return s + entry.Get<double>("x"); });
   Info("AlgIter1","xsum=%g",sum);
 
   std::vector<double> vx;
   std::transform (iter.begin(), iter.end(), std::back_inserter(vx),
-                  [](const TTreeIterator& entry) -> double { return entry["x"]; });
+                  [](const TTreeIterator::Entry& entry) -> double { return entry["x"]; });
   std::cout << "vx = ";
   for (auto& x : vx) { if (&x != &vx.front()) std::cout << ','; std::cout << x; }
   std::cout << '\n';

@@ -190,7 +190,7 @@ TEST(timingTests1, GetIter) {
       double x = entry[b.c_str()];
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",iter.index(),b.c_str());
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",entry.index(),b.c_str());
 #endif
     }
   }
@@ -232,7 +232,7 @@ TEST(timingTests1, GetIter2) {
       double x = entry[b.c_str()];
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",iter.index(),b.c_str());
+      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",entry.index(),b.c_str());
 #endif
     }
   }
@@ -371,7 +371,7 @@ TEST(timingTests2, GetIter) {
     for (auto& x : M.x) {
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",iter.index(),&x-&M.x[0]);
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",entry.index(),&x-&M.x[0]);
 #endif
     }
   }
@@ -501,7 +501,7 @@ TEST(timingTests3, GetIter) {
     for (auto& x : vx) {
       vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",iter.index(),&x-vx.data());
+      EXPECT_EQ (x, v++) << Form("entry %lld, element %td",entry.index(),&x-vx.data());
 #endif
     }
   }
