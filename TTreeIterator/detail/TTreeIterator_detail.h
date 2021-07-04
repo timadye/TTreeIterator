@@ -99,7 +99,11 @@ inline /*virtual*/ Int_t TTreeIterator::GetEntry (Long64_t index, Int_t getall/*
     }
   } else if (nbytes == 0) {
     if (verbose() >= 0) {
-      Error ("GetEntry", "entry %lld does not exist", index);
+      std::string allbranches = BranchNamesString();
+      if (allbranches.size() > 0)
+        Error ("GetEntry", "entry %lld does not exist", index);
+      else if (verbose() >= 2)
+        Info  ("GetEntry", "no active branches to read from entry %lld", index);
     }
   } else {
     if (verbose() >= 0) {

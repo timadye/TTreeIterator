@@ -23,9 +23,10 @@ fi
 
 EXEOUT=$(readlink -e "$EXE")
 [ -z "$EXEOUT" ] && EXEOUT=$EXE
+[ -f "$BUILD_DIR/lib/libgtestd.a" ] && gtest="gtestd" || gtest="gtest"
 
 CXXFLAGS="$(root-config --cflags) -I$SRCDIR/TTreeIterator -DNO_DICT=1"
-LDFLAGS="$(root-config --ldflags --libs) -O2 -L$BUILD_DIR/lib -lgtest"
+LDFLAGS="$(root-config --ldflags --libs) -O2 -L$BUILD_DIR/lib -l$gtest"
 
 set -x
 mkdir -p obj

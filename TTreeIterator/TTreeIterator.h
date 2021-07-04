@@ -97,11 +97,11 @@ public:
 
     // delete unneeded initialisers so we don't accidentally call them
     BranchValue()                                = delete;
-    BranchValue            (      BranchValue&&) = delete;
     BranchValue& operator= (      BranchValue&&) = delete;
     BranchValue& operator= (const BranchValue& ) = delete;
     // need these initializers to use vector<BranchValue>
     BranchValue            (const BranchValue& ) = default;
+    BranchValue            (      BranchValue&&) = default;
     ~BranchValue()                               = default;
 
   protected:
@@ -157,12 +157,12 @@ public:
                             const BranchValue& >       // reference
   {
   public:
-    BranchValue_iterator (const Entry& entry, std::size_t index) : fEntry(entry), fIndex(index) {}
+    BranchValue_iterator (const Entry& entry, std::size_t index) : fIndex(index), fEntry(entry) {}
     BranchValue_iterator& operator++() { ++fIndex; return *this; }
     BranchValue_iterator  operator++(int) { BranchValue_iterator it = *this; ++fIndex; return it; }
     bool operator!= (const BranchValue_iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const BranchValue_iterator& other) const { return fIndex == other.fIndex; }
-    const BranchValue& operator*() const { return fEntry.fBranches.at(fIndex); }
+    BranchValue& operator*() const { return fEntry.fBranches.at(fIndex); }
 
     // common accessors
     std::size_t      index()   const { return fIndex;           }
