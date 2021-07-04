@@ -171,6 +171,16 @@ TEST(iterTests1, GetIter) {
     for (auto& si : vs) { if (&si != &vs.front()) std::cout << ','; std::cout << '"' << si << '"'; }
     std::cout << ')' << std::endl;
     h.Print("all");
+
+    if (entry.index() == 0) {
+      std::cout << "Branches:";
+      for (auto& b : entry) {
+        std::cout << ' ' << b.GetName() << '(' << b.GetType() << ')';
+        if      (b.GetType() == TTreeIterator::type_code<double     >()) std::cout << '=' << b.Get<double     >();
+        else if (b.GetType() == TTreeIterator::type_code<std::string>()) std::cout << '=' << b.Get<std::string>();
+      }
+      std::cout << '\n';
+    }
   }
 }
 
