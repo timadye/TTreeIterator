@@ -121,11 +121,7 @@ public:
     template <typename T> static void SetDefaultValue (BranchValue* ibranch);
     template <typename T> static bool SetValueAddress (BranchValue* ibranch, const char* call, bool redo=false);
 
-    void  Enable()      { if ( (fWasDisabled = fBranch->TestBit(kDoNotProcess))) SetBranchStatus ( true); }
-    void  EnableReset() { if (  fWasDisabled)                                    SetBranchStatus (false); }
-    void Disable()      { if (!(fWasDisabled = fBranch->TestBit(kDoNotProcess))) SetBranchStatus (false); }
-    void DisableReset() { if (! fWasDisabled)                                    SetBranchStatus ( true); }
-    void SetBranchStatus (bool status=true) { TTreeIterator::SetBranchStatus (fBranch, status, true, verbose()); }
+    bool GetBranch() const;
     void ResetAddress();
 
     std::string       fName;
@@ -137,12 +133,12 @@ public:
 #endif
     TBranch*          fBranch = nullptr;
     Entry&            fEntry;
+    mutable Long64_t  fLastGet = -1;
     SetDefaultValue_t fSetDefaultValue = nullptr;  // function to set value to the default
     SetValueAddress_t fSetValueAddress = nullptr;  // function to set the address again
     bool              fSet    = false;
     bool              fUnset  = false;
     bool              fIsobj  = false;
-    bool              fWasDisabled = false;
   };
 
   // ===========================================================================
@@ -281,7 +277,10 @@ public:
     }
     template <typename T> TBranch* Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel);
 
+    Entry& LoadTree(Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
+
     Long64_t fIndex;
+    Long64_t fLocalIndex=-1;
     Entry_iterator& fIter;
 
     mutable std::vector<BranchValue> fBranches;
@@ -307,7 +306,7 @@ public:
     Entry_iterator  operator++(int) { Entry_iterator it = *this; ++fIndex; return it; }
     bool operator!= (const Entry_iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const Entry_iterator& other) const { return fIndex == other.fIndex; }
-    const Entry& operator*() const { fEntry.fIndex = fIndex < fEnd ? fIndex : -1; fEntry.GetEntry(); return fEntry; }
+    const Entry& operator*() const { return fEntry.LoadTree (fIndex < fEnd ? fIndex : -1); }
     Long64_t last() { return fEnd; }
 
     // common accessors
@@ -317,6 +316,7 @@ public:
     TTree*          GetTree() const { return fTreeI.GetTree(); }
 
   protected:
+    friend BranchValue;
     friend Entry;
 
     Long64_t fIndex;
@@ -423,11 +423,6 @@ public:
   Entry_iterator end();
   Fill_iterator FillEntries (Long64_t nfill=-1);
 
-  // Set the status for a branch and all its sub-branches.
-  void SetBranchStatusAll (bool status=true, bool include_children=true) {
-    SetBranchStatus (fTree->GetListOfBranches(), status, include_children, fVerbose);
-  }
-
   // Convenience function to return the type name
   template <typename T> static const char* tname(const char* name=0);
   template <typename T> static T type_default() { return T(); }
@@ -449,8 +444,6 @@ protected:
 
   // internal methods
   void Init (TDirectory* dir=nullptr, bool owned=true);
-  static void SetBranchStatus (TObjArray* list, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
-  static void SetBranchStatus (TBranch* branch, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void BranchNames (std::vector<std::string>& allbranches, TObjArray* list, bool include_children, bool include_inactive, const std::string& pre="");
 
   // Hack to allow access to protected method TTree::CheckBranchAddressType()

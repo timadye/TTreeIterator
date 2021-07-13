@@ -12,9 +12,7 @@
 // TTreeIterator ===============================================================
 
 inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=true*/) {
-  if (!owned) {
-    SetBranchStatusAll(false);
-  } else {
+  if (owned) {
     if (!dir) dir = gDirectory;
     if ( dir) dir->GetObject(GetName(), fTree);
     if (!fTree) {
@@ -25,7 +23,6 @@ inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=tr
       fTree = new TTree(GetName(),"",99,dir);
     } else {
       SetTitle(fTree->GetTitle());
-      SetBranchStatusAll(false);
     }
     fTreeOwned = true;
   }
@@ -69,7 +66,7 @@ inline TTreeIterator::~TTreeIterator() /*override*/ {
 
 
 // std::iterator interface
-inline TTreeIterator::iterator TTreeIterator::begin() {
+inline TTreeIterator::Entry_iterator TTreeIterator::begin() {
   Long64_t last = GetTree() ? GetTree()->GetEntries() : 0;
   if (verbose() >= 1 && last>0 && GetTree()->GetDirectory())
     Info ("TTreeIterator", "get %lld entries from tree '%s' in file %s", last, GetTree()->GetName(), GetTree()->GetDirectory()->GetName());
@@ -77,7 +74,7 @@ inline TTreeIterator::iterator TTreeIterator::begin() {
 }
 
 
-inline TTreeIterator::iterator TTreeIterator::end()   {
+inline TTreeIterator::Entry_iterator TTreeIterator::end()   {
   Long64_t last = GetTree() ? GetTree()->GetEntries() : 0;
   return Entry_iterator (*this, last, last);
 }
@@ -188,35 +185,6 @@ inline /*static*/ const char* TTreeIterator::tname(const char* name/*=0*/) {
 }
 
 
-inline /*static*/ void TTreeIterator::SetBranchStatus (TObjArray* list, bool status/*=true*/, bool include_children/*=true*/,
-                                                       int verbose/*=0*/, const std::string* pre/*=nullptr*/) {
-  if (!list) return;
-  Int_t nbranches = list->GetEntriesFast();
-  for (Int_t i = 0; i < nbranches; ++i) {
-    SetBranchStatus (dynamic_cast<TBranch*>(list->UncheckedAt(i)), status, include_children, verbose, pre);
-  }
-}
-
-
-inline /*static*/ void TTreeIterator::SetBranchStatus (TBranch* branch, bool status/*=true*/, bool include_children/*=true*/,
-                                                       int verbose/*=0*/, const std::string* pre/*=nullptr*/) {
-  if (!branch) return;
-  if (verbose>=2) ::Info ("SetBranchStatus", "%s branch '%s%s'", status?"Enable":"Disable", pre?pre->c_str():"", branch->GetName());
-  if (status) branch->ResetBit(kDoNotProcess);
-  else        branch->  SetBit(kDoNotProcess);
-  if (!include_children) return;
-  if (verbose >=2) {
-    std::string newpre;
-    if (pre) newpre += *pre;
-    newpre += branch->GetName();
-    newpre += ".";
-    SetBranchStatus (branch->GetListOfBranches(), status, include_children, verbose, &newpre);
-  } else {
-    SetBranchStatus (branch->GetListOfBranches(), status, include_children, verbose);
-  }
-}
-
-
 // TTreeIterator::Entry_iterator ===============================================
 
 inline TTreeIterator::Entry_iterator::~Entry_iterator() {
@@ -249,10 +217,10 @@ inline Int_t TTreeIterator::Fill_iterator::Write (const char* name/*=0*/, Int_t 
 // TTreeIterator::Entry ========================================================
 
 inline TTreeIterator::Entry::~Entry() {
-  for (auto ibranch = fBranches.rbegin(); ibranch != fBranches.rend(); ++ibranch) {
+  if (verbose() >= 1 && fBranches.size() > 0)
+    tree().Info ("~Entry", "ResetAddress for %zu branches", fBranches.size());
+  for (auto ibranch = fBranches.rbegin(); ibranch != fBranches.rend(); ++ibranch)
     ibranch->ResetAddress();
-    ibranch->EnableReset();
-  }
 }
 
 
@@ -341,29 +309,20 @@ template <typename T>
 inline TTreeIterator::BranchValue* TTreeIterator::Entry::GetBranch(const char* name) const {
   if (index() < 0) return nullptr;
   BranchValue* ibranch = GetBranchValue<T> (name);
-  if (ibranch) return ibranch;
-  ibranch = SetBranchValue<T> (name, type_default<T>());
-  if (!GetTree()) {
-    if (verbose() >= 0) tree().Error (tname<T>("Get"), "no tree available");
-  } else if (TBranch* branch = GetTree()->GetBranch(name)) {
-    ibranch->fBranch = branch;
-    if (!ibranch->SetBranchAddress<T>()) return nullptr;
-#ifndef OVERRIDE_BRANCH_ADDRESS
-    if (ibranch->fPuser) return ibranch;  // already read value
-#endif
-    Int_t nread = branch->GetEntry (index());
-    if (nread < 0) {
-      if (verbose() >= 0) tree().Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, index());
-    } else if (nread == 0) {
-      if (verbose() >= 0) tree().Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
+  if (!ibranch) {
+    ibranch = SetBranchValue<T> (name, type_default<T>());
+    if (!GetTree()) {
+      if (verbose() >= 0) tree().Error (tname<T>("Get"), "no tree available");
+      return nullptr;
+    } else if (TBranch* branch = GetTree()->GetBranch(name)) {
+      ibranch->fBranch = branch;
+      if (!ibranch->SetBranchAddress<T>()) return nullptr;
     } else {
-      iter().fTotRead += nread;
-      if (verbose() >= 1) tree().Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
-      return ibranch;
+      if (verbose() >= 0) tree().Error (tname<T>("Get"), "branch '%s' not found", name);
+      return nullptr;
     }
-  } else {
-    if (verbose() >= 0) tree().Error (tname<T>("Get"), "branch '%s' not found", name);
   }
+  if (ibranch->GetBranch()) return ibranch;
   return nullptr;
 }
 
@@ -584,6 +543,31 @@ inline const T& TTreeIterator::BranchValue::Set(T&& val) {
 }
 
 
+inline bool TTreeIterator::BranchValue::GetBranch() const {
+  if (!fSet) return false;
+#ifndef OVERRIDE_BRANCH_ADDRESS
+  if (fPuser) return true;  // already read value
+#endif
+  if (fLastGet == index()) {
+    if (verbose() >= 3) tree().Info  ("GetBranch", "branch '%s' already read from entry %lld",    fName.c_str(),        index());
+    return true;
+  }
+  Int_t nread = fBranch->GetEntry (entry().fLocalIndex, 1);
+  if (nread < 0) {
+    if (verbose() >= 0) tree().Error ("GetBranch", "GetEntry failed for branch '%s', entry %lld (%lld)", fName.c_str(),        index(), entry().fLocalIndex);
+  } else if (nread == 0) {
+    if (verbose() >= 0) tree().Error ("GetBranch", "branch '%s' read %d bytes from entry %lld (%lld)",   fName.c_str(), nread, index(), entry().fLocalIndex);
+  } else {
+    iter().fTotRead += nread;
+    if (verbose() >= 1) tree().Info  ("GetBranch", "branch '%s' read %d bytes from entry %lld (%lld)",   fName.c_str(), nread, index(), entry().fLocalIndex);
+    fLastGet = index();
+    return true;
+  }
+  fLastGet = -1;
+  return false;
+}
+
+
 template <typename T>
 inline const T* TTreeIterator::BranchValue::GetBranchValue() const {
   if (fSet) {
@@ -617,7 +601,6 @@ inline const T* TTreeIterator::BranchValue::GetBranchValue() const {
 
 template <typename T>
 inline bool TTreeIterator::BranchValue::SetBranchAddress (const char* call/*="Get"*/) {
-  Enable();
   TBranch* branch = fBranch;
   TClass* cls = TClass::GetClass<T>();
   if (cls && branch->GetMother() == branch) {
@@ -632,7 +615,7 @@ inline bool TTreeIterator::BranchValue::SetBranchAddress (const char* call/*="Ge
 #ifndef OVERRIDE_BRANCH_ADDRESS
   if (!tree().fOverrideBranchAddress) {
     void* addr = branch->GetAddress();
-    if (addr && !fWasDisabled) {
+    if (addr && !fBranch->TestBit(kDoNotProcess)) {
       EDataType type = (!cls) ? TDataType::GetType(typeid(T)) : kOther_t;
       Int_t res = TTreeProtected::Access(*GetTree()) . CheckBranchAddressType (branch, cls, type, fIsobj);
       if (res < 0) {
@@ -686,7 +669,6 @@ inline /*static*/ bool TTreeIterator::BranchValue::SetValueAddress (BranchValue*
   }
   if (stat < 0) {
     if (ibranch->verbose() >= 0) ibranch->tree().Error (tname<T>(call), "failed to set branch '%s' %s address %p", ibranch->fName.c_str(), (ibranch->fIsobj?"object":"variable"), addr);
-    ibranch->EnableReset();
     ibranch->fSet = false;
     return false;
   }

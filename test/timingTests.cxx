@@ -212,32 +212,66 @@ TEST(timingTests1, GetIter2) {
   Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type1);
   EXPECT_EQ(nbranches, nx1);
 
-  // read once in reverse order for slowest access later
-  {
-    double vsum=0.0;
-    auto& entry = *iter.begin();
-    for (std::ptrdiff_t i = nx1-1; i >= 0; --i) {
-      double x = entry[bnames[i].c_str()];
-      vsum += x;
-    }
-    double vn = double(nbranches);
-    EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
-  }
-
   StartTimer timer (iter.GetTree());
 
   double v = vinit, vsum=0.0;
   for (auto& entry : iter) {
-    for (auto& b : bnames) {
-      double x = entry[b.c_str()];
-      vsum += x;
+    if (entry.index() == 0) {
+      // first time, read in reverse order for slowest access later
+      for (std::ptrdiff_t i = nx1-1; i >= 0; --i) {
+        double x = entry[bnames[i].c_str()];
+        vsum += x;
+        v++;
+      }
+    } else {
+      for (auto& b : bnames) {
+        double x = entry[b.c_str()];
+        vsum += x;
 #ifndef FAST_CHECKS
-      EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",entry.index(),b.c_str());
+        EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",entry.index(),b.c_str());
 #endif
+      }
     }
   }
   double vn = double(nbranches*nfill1);
   EXPECT_FLOAT_EQ (0.5*vn*(vn+2*vinit-1), vsum);
+}
+
+
+TEST(timingTests1, GetIter3) {
+  TFile file ("test_timing1.root");
+  ASSERT_FALSE(file.IsZombie()) << "no file";
+
+  std::vector<std::string> bnames;
+  bnames.reserve(nx1);
+  for (size_t i=0; i<nx1; i++) bnames.emplace_back (Form("x%03zu",i));
+
+  TTreeIterator iter ("test", &file, verbose);
+  ASSERT_TRUE(iter.GetTree()) << "no tree";
+  EXPECT_EQ(iter.GetEntries(), nfill1);
+  Int_t nbranches = ShowBranches (file, iter.GetTree(), branch_type1);
+  EXPECT_EQ(nbranches, nx1);
+
+  StartTimer timer (iter.GetTree());
+
+  double v = vinit, vsum=0.0;
+  size_t ib = nx1/2;   // read ~middle entry
+  const char* bname = bnames[ib].c_str();
+  for (auto& entry : iter) {
+    if (entry.index() == 0) {
+      // first time, read all branches
+      for (auto& b : bnames) {
+        double x = entry[b.c_str()];
+        vsum += x;
+#ifndef FAST_CHECKS
+        EXPECT_EQ (x, v++) << Form("entry %lld, branch %s",entry.index(),b.c_str());
+#endif
+      }
+    } else {
+      double x = entry[bname];
+      vsum += x;
+    }
+  }
 }
 
 
