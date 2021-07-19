@@ -18,5 +18,5 @@ cd "$BUILD_DIR"
 cmake3 "$SRCDIR" -DCMAKE_BUILD_TYPE="$BUILD_TYPE" -DCMAKE_INSTALL_PREFIX="$RUNDIR" -DCMAKE_INSTALL_MESSAGE=LAZY "$@" || exit
 make install || exit
 cd "$RUNDIR"
-ln -nfs "$BUILD_DIR/TTreeIterator/Test"* "$BUILD_DIR/TTreeIterator/Bench"* "$SRCDIR/TTreeIterator/test/"*.sh "$SRCDIR/TTreeIterator/test/"*.py $(dirname "$MAKE_SH")/make*.sh .
+ln -nfs "$BUILD_DIR/Test"* "$BUILD_DIR/Bench"* "$SRCDIR/test/"*.sh "$SRCDIR/test/"*.py $(dirname "$MAKE_SH")/make*.sh .
 ln -nfs "$SETUP_SH" setup.sh
