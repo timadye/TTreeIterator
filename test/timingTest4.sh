@@ -21,7 +21,7 @@ run() {
 }
 
 c() {
-  run ./maketiming2.sh -DNO_BranchInfo_STATS=1 -DFAST_CHECKS=1 "${defs[@]}" "$@"
+  run ./maketiming2.sh -DNO_BranchValue_STATS=1 -DFAST_CHECKS=1 "${defs[@]}" "$@"
 }
 
 t() {

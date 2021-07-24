@@ -462,11 +462,6 @@ inline TTreeIterator::BranchValue::BranchValue (TTreeIterator& tree, const char*
   fType = type_code<V>();
   fSetDefaultValue = &BranchValue::SetDefaultValue<V>;
   fSetValueAddress = &BranchValue::SetValueAddress<V>;
-  fTree    = tree.GetTree();
-  fVerbose = tree.verbose();
-#ifndef OVERRIDE_BRANCH_ADDRESS
-  fOverrideBranchAddress = tree.fOverrideBranchAddress;
-#endif
 }
 
 
@@ -638,7 +633,7 @@ inline bool TTreeIterator::BranchValue::SetBranchAddress() {
     }
   }
 #ifndef OVERRIDE_BRANCH_ADDRESS
-  if (!fOverrideBranchAddress) {
+  if (!tree().fOverrideBranchAddress) {
     void* addr = branch->GetAddress();
     if (addr && !fBranch->TestBit(kDoNotProcess)) {
       EDataType type = (!cls) ? TDataType::GetType(typeid(T)) : kOther_t;

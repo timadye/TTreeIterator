@@ -80,9 +80,9 @@ public:
 
     template <typename T> const T& Set (T&&      val);
 
-    int              verbose() const { return fVerbose; }
-    TTreeIterator&   tree()    const { return fTreeI;   }
-    TTree*           GetTree() const { return fTree;    }
+    int              verbose() const { return tree().verbose(); }
+    TTreeIterator&   tree()    const { return fTreeI;           }
+    TTree*           GetTree() const { return tree().GetTree(); }
 
     // function pointer definition to allow access to templated code
     typedef bool (*SetValueAddress_t) (BranchValue* ibranch, bool redo);
@@ -136,14 +136,6 @@ public:
     bool              fHaveAddr = false;
     bool              fUnset    = false;
     bool              fIsObj    = false;
-
-    // local copies of stuff from TTreeIterator for faster access
-    TTree*            fTree;
-    int               fVerbose;
-#ifndef OVERRIDE_BRANCH_ADDRESS
-    bool              fOverrideBranchAddress;
-#endif
-
   };
 
   // ===========================================================================
