@@ -320,8 +320,9 @@ public:
     TTreeIterator& fTreeI;
     mutable Entry fEntry;   // local copy so we can return it by reference
 
-    mutable ULong64_t fTotFill=0, fTotWrite=0, fTotRead=0;
+    mutable ULong64_t fTotFill=0, fTotWrite=0;
 #ifndef NO_BranchValue_STATS
+    mutable ULong64_t fTotRead=0;
     mutable size_t fNhits=0, fNmiss=0;
 #endif
     bool fWriting=false;

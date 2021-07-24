@@ -195,8 +195,10 @@ inline TTreeIterator::Entry_iterator::~Entry_iterator() {
 #endif
     if (fTotFill>0 || fTotWrite>0)
       tree().Info ("TTreeIterator", "filled %lld bytes total; wrote %lld bytes at end", fTotFill, fTotWrite);
+#ifndef NO_BranchValue_STATS
     if (fTotRead>0)
       tree().Info ("TTreeIterator", "read %lld bytes total", fTotRead);
+#endif
   }
 }
 
@@ -247,7 +249,9 @@ inline const T& TTreeIterator::Entry::Set (const char* name, T&& val, const char
 
 inline Int_t TTreeIterator::Entry::GetEntry (Int_t getall/*=0*/) {
   Int_t nbytes = tree().GetEntry (fIndex, getall);
+#ifndef NO_BranchValue_STATS
   if (nbytes>0) iter().fTotRead += nbytes;
+#endif
   return nbytes;
 }
 
@@ -324,7 +328,9 @@ inline TTreeIterator::BranchValue* TTreeIterator::Entry::GetBranch(const char* n
   }
   Int_t nread = ibranch->GetBranch (index(), fLocalIndex);
   if (nread < 0) return nullptr;
+#ifndef NO_BranchValue_STATS
   iter().fTotRead += nread;
+#endif
   return ibranch;
 }
 
