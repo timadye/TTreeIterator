@@ -13,6 +13,7 @@ def parseArgs():
   parser.add_option ("-o", "--output",       help="plot pdf file")
   parser.add_option ("-l", "--legends",      help="comma-separated list of legends")
   parser.add_option ("-b", "--binning",      help="distribution histogram binning (nbins:tlo:thi)", default="25")
+  parser.add_option ("-s", "--separate",     help="each CSV file is a separate series. Otherwise separate series with ':'", action="store_true")
   opt, args= parser.parse_args()
   if not args:
     parser.print_help()
@@ -46,13 +47,15 @@ def process ():
       add=False
       i += 1
       continue
-    if not add:
+    if opt.separate or not add:
+      print (f)
       add=True
       leg = legends[i] if legends and i<len(legends) else f
       tree = ROOT.TTree ("times_%d" % i, leg)
       trees.append(tree)
       nfiles.append(1)
       n = tree.ReadFile(f,"",",")
+      if opt.separate: i += 1
     else:
       nfiles[-1] += 1
       # skip header line

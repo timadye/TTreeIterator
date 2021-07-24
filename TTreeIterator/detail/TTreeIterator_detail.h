@@ -259,7 +259,7 @@ inline Int_t TTreeIterator::Entry::Fill() {
 #ifndef NO_FILL_UNSET_DEFAULT
   for (auto& b : fBranches) {
     BranchValue* ibranch = &b;
-    if (ibranch->fSet
+    if (ibranch->fHaveAddr
 #ifndef OVERRIDE_BRANCH_ADDRESS
         && !ibranch->fPuser
 #endif
@@ -310,7 +310,7 @@ inline TTreeIterator::BranchValue* TTreeIterator::Entry::GetBranch(const char* n
   if (index() < 0) return nullptr;
   BranchValue* ibranch = GetBranchValue<T> (name);
   if (!ibranch) {
-    ibranch = SetBranchValue<T> (name, type_default<T>());
+    ibranch = NewBranchValue<T> (name, type_default<T>());
     if (!GetTree()) {
       if (verbose() >= 0) tree().Error (tname<T>("Get"), "no tree available");
       return nullptr;
@@ -373,7 +373,7 @@ inline TTreeIterator::BranchValue* TTreeIterator::Entry::GetBranchValue (const c
     } else
 #endif
       addr = ibranch->GetValuePtr<V>();
-    tree().Info (tname<T>("GetBranchValue"), "found%s%s branch '%s' of type '%s' @%p", (ibranch->fSet?"":" bad"), user, name, type_name<T>(), addr);
+    tree().Info (tname<T>("GetBranchValue"), "found%s%s branch '%s' of type '%s' @%p", (ibranch->fHaveAddr?"":" bad"), user, name, type_name<T>(), addr);
   }
 #endif
   return ibranch;
@@ -387,81 +387,41 @@ inline TTreeIterator::BranchValue* TTreeIterator::Entry::NewBranch (const char* 
   Long64_t nentries = (branch ? branch->GetEntries() : 0);
   BranchValue* ibranch;
   if (index() <= nentries) {
-    ibranch = SetBranchValue<T> (name, std::forward<T>(val));
+    ibranch = NewBranchValue<T> (name, std::forward<T>(val));
   } else {
     V def = type_default<V>();
-    ibranch = SetBranchValue<T> (name, std::forward<T>(def));
+    ibranch = NewBranchValue<T> (name, std::forward<T>(def));
   }
-  if (!GetTree()) {
-    if (verbose() >= 0) tree().Error (tname<T>("Set"), "no tree available");
-    return ibranch;
-  }
-  V* pvalue = ibranch->GetValuePtr<V>();
-  if (branch) {
+  if (ibranch) {
     ibranch->fBranch = branch;
-    if (verbose() >= 1) tree().Info (tname<T>("Set"), "new branch '%s' of type '%s' already exists @%p", name, type_name<T>(), (void*)pvalue);
-    ibranch->SetBranchAddress<V>("Set");
-#ifndef OVERRIDE_BRANCH_ADDRESS
-    if (ibranch->fPuser) ibranch->Set<T> (std::forward<T>(ibranch->GetValue<T>()));
-#endif
-  } else if (leaflist && *leaflist) {
-    branch = GetTree()->Branch (name, pvalue, leaflist, bufsize);
-    if (!branch) {
-      if (verbose() >= 0) tree().Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' of type '%s'", name, leaflist, type_name<T>());
-      return ibranch;
+    ibranch->CreateBranch<T> (leaflist, bufsize, splitlevel);
+    iter().fWriting  = true;
+    if (index() > nentries) {
+      if (verbose() >= 1) tree().Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, index());
+      for (Long64_t i = nentries; i < index(); i++) {
+        FillBranch<T> (ibranch->fBranch, name);
+      }
+      ibranch->Set<T>(std::forward<T>(val));
     }
-    if   (verbose() >= 1) tree().Info  (tname<T>("Set"), "create branch '%s' with leaves '%s' of type '%s' @%p",       name, leaflist, type_name<T>(), (void*)pvalue);
-    ibranch->fBranch = branch;
-    ibranch->fSet = true;
-  } else {
-    void* addr;
-#ifdef PREFER_PTRPTR
-    if (TClass::GetClass<V>()) {  // shouldn't have to use **T for objects, but maybe it's more reliable?
-      ibranch->fIsobj = true;
-      ibranch->fPvalue = pvalue;
-      addr = &ibranch->fPvalue;
-      branch = GetTree()->Branch (name, (V**)addr, bufsize, splitlevel);
-    } else
-#endif
-    {
-      addr = pvalue;
-      branch = GetTree()->Branch (name,    pvalue, bufsize, splitlevel);
-    }
-    if (!branch) {
-      if (verbose() >= 0) tree().Error (tname<T>("Set"), "failed to create branch '%s' %s of type '%s'", name, (ibranch->fIsobj?"object":"variable"), type_name<T>());
-      return ibranch;
-    }
-    if   (verbose() >= 1) tree().Info  (tname<T>("Set"), "create branch '%s' %s of type '%s' @%p",       name, (ibranch->fIsobj?"object":"variable"), type_name<T>(), addr);
-    ibranch->fBranch = branch;
-    ibranch->fSet = true;
-  }
-  iter().fWriting     = true;
-  if (index() > nentries) {
-    if (verbose() >= 1) tree().Info (tname<T>("Set"), "branch '%s' catch up %lld entries", name, index());
-    for (Long64_t i = nentries; i < index(); i++) {
-      FillBranch<T> (branch, name);
-    }
-    ibranch->Set<T>(std::forward<T>(val));
   }
   return ibranch;
 }
 
 
 template <typename T>
-inline TTreeIterator::BranchValue* TTreeIterator::Entry::SetBranchValue (const char* name, T&& val) const {
-  using V = remove_cvref_t<T>;
+inline TTreeIterator::BranchValue* TTreeIterator::Entry::NewBranchValue (const char* name, T&& val) const {
   fBranches.reserve (200);   // when we reallocate, SetBranchAddress will be invalidated so have to fix up each time. This is ignored after the first call.
   BranchValue* front = &fBranches.front();
-  fBranches.emplace_back (name, type_code<V>(), std::forward<T>(val), *const_cast<Entry*>(this), &BranchValue::SetDefaultValue<V>, &BranchValue::SetValueAddress<V>);
-  if (front != &fBranches.front()) SetBranchAddressAll("SetBranchValue");  // vector data() moved
+  fBranches.emplace_back (*const_cast<Entry*>(this), name, std::forward<T>(val));
+  if (front != &fBranches.front()) SetBranchAddressAll();  // vector data() moved
   return &fBranches.back();
 }
 
 
-inline void TTreeIterator::Entry::SetBranchAddressAll (const char* call) const {
-  if (verbose() >= 1) tree().Info  (call, "cache reallocated, so need to set all branch addresses again");
+inline void TTreeIterator::Entry::SetBranchAddressAll() const {
+  if (verbose() >= 1) tree().Info  ("SetBranchAddressAll", "cache reallocated, so need to set all branch addresses again");
   for (auto& b : fBranches) {
-    if (b.fSetValueAddress && b.fSet
+    if (b.fSetValueAddress && b.fHaveAddr
 #ifndef OVERRIDE_BRANCH_ADDRESS
         && !b.fPuser
 #endif
@@ -491,6 +451,24 @@ inline Int_t TTreeIterator::Entry::FillBranch (TBranch* branch, const char* name
 // TTreeIterator::BranchValue ==================================================
 
 template <typename T>
+inline TTreeIterator::BranchValue::BranchValue (Entry& entry, const char* name, T&& value)
+  : fName(name),
+    fValue(std::forward<T>(value)),
+    fEntry(entry)
+{
+  using V = remove_cvref_t<T>;
+  fType = type_code<V>();
+  fSetDefaultValue = &BranchValue::SetDefaultValue<V>;
+  fSetValueAddress = &BranchValue::SetValueAddress<V>;
+  fTree     = entry.GetTree();
+  fVerbose  = entry.verbose();
+#ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
+  fOverrideBranchAddress = entry.tree().fOverrideBranchAddress;
+#endif
+}
+
+
+template <typename T>
 inline const T& TTreeIterator::BranchValue::Get(const T& def) const {
   const T* pval = GetBranchValue<T>();
   if (pval) return *pval;
@@ -501,7 +479,7 @@ inline const T& TTreeIterator::BranchValue::Get(const T& def) const {
 template <typename T>
 inline const T& TTreeIterator::BranchValue::Set(T&& val) {
   using V = remove_cvref_t<T>;
-  if (fSet) {
+  if (fHaveAddr) {
     fUnset = false;
 #ifndef OVERRIDE_BRANCH_ADDRESS
     if (!fPuser) {
@@ -530,7 +508,7 @@ inline const T& TTreeIterator::BranchValue::Set(T&& val) {
         }
 #ifndef OVERRIDE_BRANCH_ADDRESS
     }
-    if (fIsobj) {
+    if (fIsObj) {
       if (fPuser && *fPuser)
         return **(V**)fPuser = std::forward<T>(val);
     } else {
@@ -543,8 +521,54 @@ inline const T& TTreeIterator::BranchValue::Set(T&& val) {
 }
 
 
+template <typename T>
+inline void TTreeIterator::BranchValue::CreateBranch (const char* leaflist, Int_t bufsize, Int_t splitlevel) {
+  using V = remove_cvref_t<T>;
+  if (!GetTree()) {
+    if (verbose() >= 0) tree().Error (tname<T>("Set"), "no tree available");
+    return;
+  }
+  V* pvalue = GetValuePtr<V>();
+  if (fBranch) {
+    if (verbose() >= 1) tree().Info (tname<T>("Set"), "new branch '%s' of type '%s' already exists @%p", GetName().c_str(), type_name<T>(), (void*)pvalue);
+    SetBranchAddress<V>("Set");
+#ifndef OVERRIDE_BRANCH_ADDRESS
+    if (fPuser) Set<T> (std::forward<T>(GetValue<T>()));
+#endif
+  } else if (leaflist && *leaflist) {
+    fBranch = GetTree()->Branch (GetName().c_str(), pvalue, leaflist, bufsize);
+    if (!fBranch) {
+      if (verbose() >= 0) tree().Error (tname<T>("Set"), "failed to create branch '%s' with leaves '%s' of type '%s'", GetName().c_str(), leaflist, type_name<T>());
+      return;
+    }
+    if   (verbose() >= 1) tree().Info  (tname<T>("Set"), "create branch '%s' with leaves '%s' of type '%s' @%p",       GetName().c_str(), leaflist, type_name<T>(), (void*)pvalue);
+    fHaveAddr = true;
+  } else {
+    void* addr;
+#ifdef PREFER_PTRPTR
+    if (TClass::GetClass<V>()) {  // shouldn't have to use **T for objects, but maybe it's more reliable?
+      fIsObj = true;
+      fPvalue = pvalue;
+      addr = &fPvalue;
+      fBranch = GetTree()->Branch (GetName().c_str(), (V**)addr, bufsize, splitlevel);
+    } else
+#endif
+    {
+      addr = pvalue;
+      fBranch = GetTree()->Branch (GetName().c_str(),    pvalue, bufsize, splitlevel);
+    }
+    if (!fBranch) {
+      if (verbose() >= 0) tree().Error (tname<T>("Set"), "failed to create branch '%s' %s of type '%s'", GetName().c_str(), (fIsObj?"object":"variable"), type_name<T>());
+      return;
+    }
+    if   (verbose() >= 1) tree().Info  (tname<T>("Set"), "create branch '%s' %s of type '%s' @%p",       GetName().c_str(), (fIsObj?"object":"variable"), type_name<T>(), addr);
+    fHaveAddr = true;
+  }
+}
+
+
 inline bool TTreeIterator::BranchValue::GetBranch() const {
-  if (!fSet) return false;
+  if (!fHaveAddr) return false;
 #ifndef OVERRIDE_BRANCH_ADDRESS
   if (fPuser) return true;  // already read value
 #endif
@@ -570,7 +594,7 @@ inline bool TTreeIterator::BranchValue::GetBranch() const {
 
 template <typename T>
 inline const T* TTreeIterator::BranchValue::GetBranchValue() const {
-  if (fSet) {
+  if (fHaveAddr) {
 #ifndef OVERRIDE_BRANCH_ADDRESS
     if (!fPuser) {
 #endif
@@ -586,7 +610,7 @@ inline const T* TTreeIterator::BranchValue::GetBranchValue() const {
         return pvalue;
 #ifndef OVERRIDE_BRANCH_ADDRESS
     }
-    if (fIsobj) {
+    if (fIsObj) {
       if (fPuser && *fPuser)
         return *(T**)fPuser;
     } else {
@@ -607,7 +631,7 @@ inline bool TTreeIterator::BranchValue::SetBranchAddress (const char* call/*="Ge
     TClass* expectedClass = 0;
     EDataType expectedType = kOther_t;
     if (!branch->GetExpectedType (expectedClass, expectedType)) {
-      if (expectedClass) fIsobj = true;
+      if (expectedClass) fIsObj = true;
     } else {
       if (verbose() >= 1) tree().Info (tname<T>("SetBranchAddress"), "GetExpectedType failed for branch '%s'", fName.c_str());
     }
@@ -617,14 +641,14 @@ inline bool TTreeIterator::BranchValue::SetBranchAddress (const char* call/*="Ge
     void* addr = branch->GetAddress();
     if (addr && !fBranch->TestBit(kDoNotProcess)) {
       EDataType type = (!cls) ? TDataType::GetType(typeid(T)) : kOther_t;
-      Int_t res = TTreeProtected::Access(*GetTree()) . CheckBranchAddressType (branch, cls, type, fIsobj);
+      Int_t res = TTreeProtected::Access(*GetTree()) . CheckBranchAddressType (branch, cls, type, fIsObj);
       if (res < 0) {
-        if (verbose() >= 0) tree().Error (tname<T>(call), "branch '%s' %s existing address %p wrong type", fName.c_str(), (fIsobj?"object":"variable"), addr);
+        if (verbose() >= 0) tree().Error (tname<T>(call), "branch '%s' %s existing address %p wrong type", fName.c_str(), (fIsObj?"object":"variable"), addr);
         return false;
       }
-      if   (verbose() >= 1) tree().Info  (tname<T>(call), "use branch '%s' %s existing address %p",        fName.c_str(), (fIsobj?"object":"variable"), addr);
+      if   (verbose() >= 1) tree().Info  (tname<T>(call), "use branch '%s' %s existing address %p",        fName.c_str(), (fIsObj?"object":"variable"), addr);
       fPuser = (void**)addr;
-      fSet = true;
+      fHaveAddr = true;
       return true;
     }
   }
@@ -634,7 +658,7 @@ inline bool TTreeIterator::BranchValue::SetBranchAddress (const char* call/*="Ge
 
 
 inline void TTreeIterator::BranchValue::ResetAddress() {
-  if (fBranch && fSet
+  if (fBranch && fHaveAddr
 #ifndef OVERRIDE_BRANCH_ADDRESS
       && !fPuser
 #endif
@@ -657,7 +681,7 @@ inline /*static*/ bool TTreeIterator::BranchValue::SetValueAddress (BranchValue*
   T* pvalue= ibranch->GetValuePtr<T>();
   Int_t stat=0;
   void* addr;
-  if (ibranch->fIsobj) {
+  if (ibranch->fIsObj) {
     ibranch->fPvalue = pvalue;
     addr = &ibranch->fPvalue;
     if (!redo)
@@ -668,12 +692,12 @@ inline /*static*/ bool TTreeIterator::BranchValue::SetValueAddress (BranchValue*
     stat = ibranch->GetTree()->SetBranchAddress (ibranch->fName.c_str(), pvalue);
   }
   if (stat < 0) {
-    if (ibranch->verbose() >= 0) ibranch->tree().Error (tname<T>(call), "failed to set branch '%s' %s address %p", ibranch->fName.c_str(), (ibranch->fIsobj?"object":"variable"), addr);
-    ibranch->fSet = false;
+    if (ibranch->verbose() >= 0) ibranch->tree().Error (tname<T>(call), "failed to set branch '%s' %s address %p", ibranch->fName.c_str(), (ibranch->fIsObj?"object":"variable"), addr);
+    ibranch->fHaveAddr = false;
     return false;
   }
-  if   (ibranch->verbose() >= 1) ibranch->tree().Info  (tname<T>(call), "set branch '%s' %s address %p%s",         ibranch->fName.c_str(), (ibranch->fIsobj?"object":"variable"), addr, (redo?" (pointer only)":""));
-  ibranch->fSet = true;
+  if   (ibranch->verbose() >= 1) ibranch->tree().Info  (tname<T>(call), "set branch '%s' %s address %p%s",         ibranch->fName.c_str(), (ibranch->fIsObj?"object":"variable"), addr, (redo?" (pointer only)":""));
+  ibranch->fHaveAddr = true;
   return true;
 }
 

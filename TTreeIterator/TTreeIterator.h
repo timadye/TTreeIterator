@@ -80,20 +80,18 @@ public:
     template <typename T> const T& Set (T&&      val);
 
     Long64_t         index()   const { return fEntry.index();   }
-    int              verbose() const { return fEntry.verbose(); }
+    int              verbose() const { return fVerbose;         }
     Entry&           entry()   const { return fEntry;           }
     Entry_iterator&  iter()    const { return fEntry.iter();    }
     TTreeIterator&   tree()    const { return fEntry.tree();    }
-    TTree*           GetTree() const { return fEntry.GetTree(); }
+    TTree*           GetTree() const { return fTree;            }
 
     // function pointer definition to allow access to templated code
     typedef bool (*SetValueAddress_t) (BranchValue* ibranch, const char* call, bool redo);
     typedef void (*SetDefaultValue_t) (BranchValue* ibranch);
 
     // not called by user, but needs to be public so can be called by std::vector::emplace_back()
-    template <typename T>
-    BranchValue (const char* name, type_code_t type,                     T&& value,   Entry& entry,   SetDefaultValue_t fd, SetValueAddress_t fa)
-      :                fName(name),      fType(type), fValue(std::forward<T>(value)), fEntry(entry), fSetDefaultValue(fd), fSetValueAddress(fa) {}
+    template <typename T> BranchValue (Entry& entry, const char* name, T&& value);
 
     // delete unneeded initialisers so we don't accidentally call them
     BranchValue()                                = delete;
@@ -115,8 +113,9 @@ public:
     template <typename T> const T* GetValuePtr() const { return any_namespace::any_cast<T>(&fValue); }
     template <typename T>       T* GetValuePtr()       { return any_namespace::any_cast<T>(&fValue); }
 
+    template <typename T> void     CreateBranch       (const char* leaflist, Int_t bufsize, Int_t splitlevel);
     template <typename T> const T* GetBranchValue() const;
-    template <typename T> bool     SetBranchAddress (const char* call="Get");
+    template <typename T> bool     SetBranchAddress   (const char* call="Get");
 
     template <typename T> static void SetDefaultValue (BranchValue* ibranch);
     template <typename T> static bool SetValueAddress (BranchValue* ibranch, const char* call, bool redo=false);
@@ -127,18 +126,26 @@ public:
     std::string       fName;
     type_code_t       fType;
     any_type          fValue;
-    mutable void*     fPvalue = nullptr;
+    mutable void*     fPvalue   = nullptr;
 #ifndef OVERRIDE_BRANCH_ADDRESS
-    mutable void**    fPuser  = nullptr;
+    mutable void**    fPuser    = nullptr;
 #endif
-    TBranch*          fBranch = nullptr;
+    TBranch*          fBranch   = nullptr;
     Entry&            fEntry;
-    mutable Long64_t  fLastGet = -1;
-    SetDefaultValue_t fSetDefaultValue = nullptr;  // function to set value to the default
-    SetValueAddress_t fSetValueAddress = nullptr;  // function to set the address again
-    bool              fSet    = false;
-    bool              fUnset  = false;
-    bool              fIsobj  = false;
+    mutable Long64_t  fLastGet  = -1;
+    SetDefaultValue_t fSetDefaultValue;    // function to set value to the default
+    SetValueAddress_t fSetValueAddress;    // function to set the address again
+    bool              fHaveAddr = false;
+    bool              fUnset    = false;
+    bool              fIsObj    = false;
+
+    // local copies of stuff from TTreeIterator for faster access
+    TTree*            fTree;
+    int               fVerbose;
+#ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
+    bool              fOverrideBranchAddress;
+#endif
+
   };
 
   // ===========================================================================
@@ -266,9 +273,9 @@ public:
     template <typename T> BranchValue* GetBranchValue (const char* name) const;
                           BranchValue* GetBranchValue (const char* name, type_code_t type) const;
     template <typename T> BranchValue* NewBranch      (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
-    template <typename T> BranchValue* SetBranchValue (const char* name, T&& val) const;
+    template <typename T> BranchValue* NewBranchValue (const char* name, T&& val) const;
     template <typename T> Int_t        FillBranch     (TBranch* branch, const char* name);
-    void SetBranchAddressAll (const char* call="SetBranchValue") const;
+    void SetBranchAddressAll() const;
 
     // Create empty branch
     template <typename T>
@@ -279,13 +286,12 @@ public:
 
     Entry& LoadTree(Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
 
-    Long64_t fIndex;
-    Long64_t fLocalIndex=-1;
+    Long64_t        fIndex;
+    Long64_t        fLocalIndex = -1;
     Entry_iterator& fIter;
-
-    mutable std::vector<BranchValue> fBranches;
+    mutable std::vector<BranchValue>           fBranches;
     mutable std::vector<BranchValue>::iterator fLastBranch;
-    mutable bool fTryLast = false;
+    mutable bool    fTryLast    = false;
   };
 
   // ===========================================================================
