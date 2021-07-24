@@ -67,8 +67,9 @@ public:
   class BranchValue {
   public:
 
-    const std::string& GetName() const { return fName; }
-    type_code_t        GetType() const { return fType; }
+    const std::string& GetNameString() const { return fName; }
+    const char*        GetName()       const { return fName.c_str(); }
+    type_code_t        GetType()       const { return fType; }
 
     // Get value, returning a reference
     template <typename T> T& Get() const { return Get<T>(default_value<remove_cvref_t<T>>()); }
@@ -79,19 +80,16 @@ public:
 
     template <typename T> const T& Set (T&&      val);
 
-    Long64_t         index()   const { return fEntry.index();   }
-    int              verbose() const { return fVerbose;         }
-    Entry&           entry()   const { return fEntry;           }
-    Entry_iterator&  iter()    const { return fEntry.iter();    }
-    TTreeIterator&   tree()    const { return fEntry.tree();    }
-    TTree*           GetTree() const { return fTree;            }
+    int              verbose() const { return fVerbose; }
+    TTreeIterator&   tree()    const { return fTreeI;   }
+    TTree*           GetTree() const { return fTree;    }
 
     // function pointer definition to allow access to templated code
-    typedef bool (*SetValueAddress_t) (BranchValue* ibranch, const char* call, bool redo);
+    typedef bool (*SetValueAddress_t) (BranchValue* ibranch, bool redo);
     typedef void (*SetDefaultValue_t) (BranchValue* ibranch);
 
     // not called by user, but needs to be public so can be called by std::vector::emplace_back()
-    template <typename T> BranchValue (Entry& entry, const char* name, T&& value);
+    template <typename T> BranchValue (TTreeIterator& tree, const char* name, T&& value);
 
     // delete unneeded initialisers so we don't accidentally call them
     BranchValue()                                = delete;
@@ -115,12 +113,12 @@ public:
 
     template <typename T> void     CreateBranch       (const char* leaflist, Int_t bufsize, Int_t splitlevel);
     template <typename T> const T* GetBranchValue() const;
-    template <typename T> bool     SetBranchAddress   (const char* call="Get");
+    template <typename T> bool     SetBranchAddress();
 
     template <typename T> static void SetDefaultValue (BranchValue* ibranch);
-    template <typename T> static bool SetValueAddress (BranchValue* ibranch, const char* call, bool redo=false);
+    template <typename T> static bool SetValueAddress (BranchValue* ibranch, bool redo=false);
 
-    bool GetBranch() const;
+    Int_t GetBranch (Long64_t index, Long64_t localIndex) const;
     void ResetAddress();
 
     std::string       fName;
@@ -131,7 +129,7 @@ public:
     mutable void**    fPuser    = nullptr;
 #endif
     TBranch*          fBranch   = nullptr;
-    Entry&            fEntry;
+    TTreeIterator&    fTreeI;
     mutable Long64_t  fLastGet  = -1;
     SetDefaultValue_t fSetDefaultValue;    // function to set value to the default
     SetValueAddress_t fSetValueAddress;    // function to set the address again
@@ -142,7 +140,7 @@ public:
     // local copies of stuff from TTreeIterator for faster access
     TTree*            fTree;
     int               fVerbose;
-#ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
+#ifndef OVERRIDE_BRANCH_ADDRESS
     bool              fOverrideBranchAddress;
 #endif
 
