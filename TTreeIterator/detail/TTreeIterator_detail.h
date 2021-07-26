@@ -297,12 +297,11 @@ inline TTreeIterator::BranchValue* TTreeIterator::GetBranch (const char* name, L
 
 
 inline TTreeIterator::BranchValue* TTreeIterator::GetBranchValue (const char* name, type_code_t type) const {
-  const std::string sname = name;
   if (fTryLast) {
     ++fLastBranch;
     if (fLastBranch == fBranches.end()) fLastBranch = fBranches.begin();
     BranchValue& b = *fLastBranch;
-    if (b.fType == type && b.fName == sname) {
+    if (b.fType == type && b.fName == name) {
 #ifndef NO_BranchValue_STATS
       ++fNhits;
 #endif
@@ -312,7 +311,7 @@ inline TTreeIterator::BranchValue* TTreeIterator::GetBranchValue (const char* na
   for (auto ib = fBranches.begin(); ib != fBranches.end(); ib++) {
     if (fTryLast && ib == fLastBranch) continue;    // already checked this one
     BranchValue& b = *ib;
-    if (b.fType == type && b.fName == sname) {
+    if (b.fType == type && b.fName == name) {
       fTryLast = true;
       fLastBranch = ib;
 #ifndef NO_BranchValue_STATS
