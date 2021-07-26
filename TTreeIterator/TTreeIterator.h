@@ -101,6 +101,7 @@ public:
     ~BranchValue()                               = default;
 
   protected:
+    friend TTreeIterator;
     friend Entry;
     friend Entry_iterator;
     friend Fill_iterator;
@@ -155,13 +156,12 @@ public:
     BranchValue_iterator  operator++(int) { BranchValue_iterator it = *this; ++fIndex; return it; }
     bool operator!= (const BranchValue_iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const BranchValue_iterator& other) const { return fIndex == other.fIndex; }
-    BranchValue& operator*() const { return fEntry.fBranches.at(fIndex); }
+    BranchValue& operator*() const { return fEntry.tree().fBranches.at(fIndex); }
 
     // common accessors
     std::size_t      index()   const { return fIndex;           }
     int              verbose() const { return fEntry.verbose(); }
     const Entry&     entry()   const { return fEntry;           }
-    Entry_iterator&  iter()    const { return fEntry.iter();    }
     TTreeIterator&   tree()    const { return fEntry.tree();    }
     TTree*           GetTree() const { return fEntry.GetTree(); }
 
@@ -208,8 +208,7 @@ public:
     using size_type   = std::size_t;
     using difference_type = std::ptrdiff_t;
 
-    Entry (Entry_iterator& iter, Long64_t index=0) : fIndex(index), fIter(iter) {}
-    ~Entry();
+    Entry (TTreeIterator& treeI, Long64_t index=0) : fIndex(index), fTreeI(treeI) {}
 
     Getter Get        (const char* name) const { return Getter(*this,name); }
     Getter operator[] (const char* name) const { return Getter(*this,name); }
@@ -240,48 +239,44 @@ public:
     template <typename T>
     const T& Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
 
-    Int_t GetEntry (Int_t getall=0);
-    Int_t Fill();
+    Int_t GetEntry (Int_t getall=0) { return tree().GetEntry (fIndex, getall); }
+    Int_t Fill() { Int_t nbytes = tree().Fill(); if (nbytes > 0) fWriting = true; return nbytes; }
 
-    BranchValue_iterator begin() const { return BranchValue_iterator (*this, 0);                }
-    BranchValue_iterator end()   const { return BranchValue_iterator (*this, fBranches.size()); }
-
-    // common accessors
-    Long64_t          index()   const { return fIndex;          }
-    int               verbose() const { return fIter.verbose(); }
-    Entry_iterator&   iter()    const { return fIter;           }
-    TTreeIterator&    tree()    const { return fIter.tree();    }
-    TTree*            GetTree() const { return fIter.GetTree(); }
-
-  protected:
-    friend Entry_iterator;
-    friend Fill_iterator;
-    friend BranchValue_iterator;
-    friend BranchValue;
-
-    template <typename T> BranchValue* GetBranch      (const char* name) const;
-    template <typename T> BranchValue* GetBranchValue (const char* name) const;
-                          BranchValue* GetBranchValue (const char* name, type_code_t type) const;
-    template <typename T> BranchValue* NewBranch      (const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
-    template <typename T> BranchValue* NewBranchValue (const char* name, T&& val) const;
-    template <typename T> Int_t        FillBranch     (TBranch* branch, const char* name);
-    void SetBranchAddressAll() const;
+    Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0) {
+      if (!fWriting) return 0;
+      fWriting = false;
+      return tree().Write (name, option, bufsize);
+    }
 
     // Create empty branch
     template <typename T>
     TBranch* Branch (const char* name) {
       return Branch<T> (name, GetLeaflist<remove_cvref_t<T>>(), tree().fBufsize, tree().fSplitlevel);
     }
-    template <typename T> TBranch* Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel);
+    template <typename T>
+    TBranch* Branch (const char* name, const char* leaflist, Int_t bufsize, Int_t splitlevel) {
+      return Branch<T> (name, leaflist, bufsize, splitlevel);
+    }
 
-    Entry& LoadTree(Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
+    Entry& LoadTree (Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
+
+    BranchValue_iterator begin() const { return BranchValue_iterator (*this, 0);                       }
+    BranchValue_iterator end()   const { return BranchValue_iterator (*this, tree().fBranches.size()); }
+
+    // common accessors
+    Long64_t          index()   const { return fIndex;           }
+    int               verbose() const { return tree().verbose(); }
+    TTreeIterator&    tree()    const { return fTreeI;           }
+    TTree*            GetTree() const { return tree().GetTree(); }
+
+  protected:
+    friend Entry_iterator;
+    friend Fill_iterator;
 
     Long64_t        fIndex;
     Long64_t        fLocalIndex = -1;
-    Entry_iterator& fIter;
-    mutable std::vector<BranchValue>           fBranches;
-    mutable std::vector<BranchValue>::iterator fLastBranch;
-    mutable bool    fTryLast    = false;
+    TTreeIterator&  fTreeI;
+    bool            fWriting = false;
   };
 
   // ===========================================================================
@@ -295,15 +290,16 @@ public:
   {
   public:
 
-    Entry_iterator (TTreeIterator& treeI, Long64_t first, Long64_t last) : fIndex(first), fEnd(last), fTreeI(treeI), fEntry(*this,0) {}
+    Entry_iterator (TTreeIterator& treeI, Long64_t first, Long64_t last) : fIndex(first), fEnd(last), fTreeI(treeI), fEntry(fTreeI,0) {}
 //  Entry_iterator (const Entry_iterator& in) : fIndex(in.fIndex), fEnd(in.fEnd), fTreeI(in.fTreeI) {}  // default probably OK
-    ~Entry_iterator();
     Entry_iterator& operator++() { ++fIndex; return *this; }
     Entry_iterator  operator++(int) { Entry_iterator it = *this; ++fIndex; return it; }
     bool operator!= (const Entry_iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const Entry_iterator& other) const { return fIndex == other.fIndex; }
     const Entry& operator*() const { return fEntry.LoadTree (fIndex < fEnd ? fIndex : -1); }
     Long64_t last() { return fEnd; }
+
+    Int_t GetEntry (Int_t getall=0) { return tree().GetEntry (fIndex, getall); }
 
     // common accessors
     Long64_t        index()   const { return fIndex;           }
@@ -319,13 +315,6 @@ public:
     const Long64_t fEnd;
     TTreeIterator& fTreeI;
     mutable Entry fEntry;   // local copy so we can return it by reference
-
-    mutable ULong64_t fTotFill=0, fTotWrite=0;
-#ifndef NO_BranchValue_STATS
-    mutable ULong64_t fTotRead=0;
-    mutable size_t fNhits=0, fNmiss=0;
-#endif
-    bool fWriting=false;
   };
 
   // ===========================================================================
@@ -340,7 +329,10 @@ public:
     Fill_iterator begin() { return Fill_iterator (fTreeI, fIndex, fEnd); }
     Fill_iterator end()   { return Fill_iterator (fTreeI, fEnd,   fEnd); }
 
-    Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0);
+    Int_t Fill() { return fEntry.Fill(); }
+    Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0) {
+      return fEntry.Write (name, option, bufsize);
+    }
   };
 
   // ===========================================================================
@@ -409,6 +401,8 @@ public:
 
   // Forwards to TTree with some extra
   virtual Int_t GetEntry (Long64_t index, Int_t getall=0);
+  virtual Int_t Fill();
+  Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0) override;
 
   // use a TChain
   Int_t Add (const char* name, Long64_t nentries=TTree::kMaxEntries);
@@ -449,7 +443,17 @@ protected:
     using TTree::CheckBranchAddressType;
   };
 
-  // Member variables
+  // manage BranchValue cache
+  template <typename T> BranchValue* GetBranch      (const char* name, Long64_t index, Long64_t localIndex) const;
+  template <typename T> BranchValue* GetBranchValue (const char* name) const;
+                        BranchValue* GetBranchValue (const char* name, type_code_t type) const;
+  template <typename T> TBranch*     Branch         (const char* name, Long64_t index,          const char* leaflist, Int_t bufsize, Int_t splitlevel);
+  template <typename T> BranchValue* NewBranch      (const char* name, Long64_t index, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
+  template <typename T> BranchValue* NewBranchValue (const char* name, T&& val) const;
+  template <typename T> Int_t        FillBranch     (TBranch* branch, const char* name, Long64_t index);
+  void SetBranchAddressAll() const;
+
+  // Settings
   TTree* fTree       = nullptr;
   bool   fTreeOwned  = false;
   Int_t  fBufsize    = 32000;
@@ -458,6 +462,18 @@ protected:
 #ifndef OVERRIDE_BRANCH_ADDRESS  // only need flag if compiled in
   bool   fOverrideBranchAddress = false;
 #endif
+
+  // Stats
+  ULong64_t fTotFill=0, fTotWrite=0;
+#ifndef NO_BranchValue_STATS
+  mutable ULong64_t fTotRead=0;
+  mutable size_t fNhits=0, fNmiss=0;
+#endif
+
+  // BranchValue cache
+  mutable std::vector<BranchValue>           fBranches;
+  mutable std::vector<BranchValue>::iterator fLastBranch;
+  mutable bool    fTryLast    = false;
 
 #ifndef NO_DICT
   ClassDefOverride(TTreeIterator,0);
