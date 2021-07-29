@@ -7,11 +7,15 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
+
 #include "TFile.h"
 #include "TString.h"
 #include "TSystem.h"
 #include "TStopwatch.h"
 #include "TTree.h"
+#include "TTreeReader.h"
+#include "TTreeReaderValue.h"
+
 #include "TTreeIterator/TTreeIterator.h"
 
 
@@ -31,13 +35,15 @@
 #define TEST3
 #define FILL
 #define GET
+#define ADDR
+#define READER
 #endif
 
 //#define FAST_CHECKS 1
 
-const Long64_t nfill1 = NFILL;
-const Long64_t nfill2 = NFILL;
-const Long64_t nfill3 = NFILL;
+constexpr Long64_t nfill1 = NFILL;
+constexpr Long64_t nfill2 = NFILL;
+constexpr Long64_t nfill3 = NFILL;
 constexpr size_t nx1 = NX;
 constexpr size_t nx2 = NX;
 constexpr size_t nx3 = NX;
@@ -184,6 +190,67 @@ void GetIter1() {
   assert (std::abs (1.0 - (0.5*vn*(vn+2*vinit-1) / vsum)) < 1e-6);
 }
 #endif
+
+#ifdef ADDR
+void GetAddr1() {
+  TFile file ("test_timing1.root");
+  assert (!file.IsZombie());
+
+  std::unique_ptr<TTree> tree (file.Get<TTree>("test"));
+  assert (tree);
+  assert (tree->GetEntries() == nfill1);
+
+  std::vector<double> vals(nx1);
+  StartTimer timer (__func__, tree.get());
+  for (size_t i=0; i<nx1; i++) tree->SetBranchAddress (Form("x%03zu",i), &vals[i]);
+
+  double v = vinit, vsum=0.0;
+  Long64_t n = tree->GetEntries();
+  for (Long64_t i=0; i<n; i++) {
+    tree->GetEntry(i);
+    for (auto& vx : vals) {
+      double x = vx;
+      vsum += x;
+#ifndef FAST_CHECKS
+      assert (x == v++);
+#endif
+    }
+  }
+  tree->ResetBranchAddresses();
+  double vn = double(nx1*nfill1);
+  assert (std::abs (1.0 - (0.5*vn*(vn+2*vinit-1) / vsum)) < 1e-6);
+}
+#endif
+
+#ifdef READER
+void GetReader1() {
+  TFile file ("test_timing1.root");
+  assert (!file.IsZombie());
+
+  TTreeReader reader ("test", &file);
+  assert (reader.GetTree());
+  assert (reader.GetEntries() == nfill1);
+
+  StartTimer timer (__func__, reader.GetTree());
+  std::vector<TTreeReaderValue<Double_t>> vals;
+  vals.reserve(nx1);
+  for (size_t i=0; i<nx1; i++)
+    vals.emplace_back (reader, Form("x%03zu",i));
+
+  double v = vinit, vsum=0.0;
+  while (reader.Next()) {
+    for (auto& vx : vals) {
+      double x = *vx;
+      vsum += x;
+#ifndef FAST_CHECKS
+      assert (x == v++);
+#endif
+    }
+  }
+  double vn = double(nx1*nfill1);
+  assert (std::abs (1.0 - (0.5*vn*(vn+2*vinit-1) / vsum)) < 1e-6);
+}
+#endif
 #endif
 
 
@@ -293,6 +360,12 @@ int main(int argc, char* argv[]) {
 #endif
 #ifdef GET
     if (strchr(a,'g')) GetIter1();
+#endif
+#ifdef ADDR
+    if (strchr(a,'a')) GetAddr1();
+#endif
+#ifdef READER
+    if (strchr(a,'r')) GetReader1();
 #endif
   }
 #endif
