@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
-import os, sys, optparse
+import os, sys, optparse, math
 import ROOT
 
 cols = [ROOT.kBlue, ROOT.kRed, ROOT.kGreen]
@@ -13,6 +13,7 @@ def parseArgs():
   parser.add_option ("-o", "--output",       help="plot pdf file")
   parser.add_option ("-l", "--legends",      help="comma-separated list of legends")
   parser.add_option ("-b", "--binning",      help="distribution histogram binning (nbins:tlo:thi)", default="25")
+  parser.add_option ("-f", "--fastest",      help="use fastest time", action="store_true")
   parser.add_option ("-s", "--separate",     help="each CSV file is a separate series. Otherwise separate series with ':'", action="store_true")
   opt, args= parser.parse_args()
   if not args:
@@ -95,16 +96,21 @@ def process ():
 
   profiles = []
   allhists = []
+  allranges = []
+  maxns = None
   for i,tree in enumerate(trees):
     p = ROOT.TProfile ("profile_%d" % i, "%s;;ns / double" % tree.GetTitle(), len(labels), 0.0, float(len(labels)))
     hists = []
+    ranges = []
     profiles.append(p)
     ax = p.GetXaxis()
     for b,label in enumerate(labels):
       ax.SetBinLabel (b+1, label)
       h = ROOT.TH1D ("hist_%d_%d" % (i, b), "%s - %s;ns / double;" % (tree.GetTitle(), label), nbins, tlo, thi)
       hists.append(h)
+      ranges.append([None,None])
     allhists.append(hists)
+    allranges.append(ranges)
     p.SetStats(0)
     p.SetMinimum(0.0)
     p.SetBarWidth(w)
@@ -123,14 +129,25 @@ def process ():
       ns = 1000000.0 * e.ms / float(nval)
       p.Fill (e.label, ns)
       hists[b-1].Fill (ns)
+      if maxns is None or ns > maxns: maxns= ns
+      r = ranges[b-1]
+      if r[0] is None or ns<r[0]: r[0]=ns
+      if r[1] is None or ns>r[1]: r[1]=ns
 
   if legends:
     leg = ROOT.TLegend (0.7,0.9-0.025*nt,0.9,0.9)
     leg.SetFillStyle(0)
   for i,p in enumerate(profiles):
     ax = p.GetXaxis()
+    ranges = allranges[i]
     for b in range(1,p.GetNbinsX()+1):
-      print ("%-10s %-20s %5.1f%s ns/double" % (p.GetTitle(), ax.GetBinLabel(b), p.GetBinContent(b), (" +/- %4.1f" % p.GetBinError(b)) if p.GetBinEntries(b)>1 else ""))
+      if opt.fastest and ranges and b-1<len(ranges) and ranges[b-1][0] is not None:
+        p.SetBinContent (b, ranges[b-1][0] * p.GetBinEntries(b))
+        p.SetBinError   (b, math.sqrt((0.5*(ranges[b-1][1]-ranges[b-1][0]))**2 * p.GetBinEntries(b)*p.GetBinEffectiveEntries(b) + ranges[b-1][0] / p.GetBinEntries(b)))
+        print ("%-10s %-20s %5.1f + %4.1f (+/- %4.1f) ns/double" % (p.GetTitle(), ax.GetBinLabel(b), ranges[b-1][0], ranges[b-1][1]-ranges[b-1][0], p.GetBinError(b)))
+      else:
+        print ("%-10s %-20s %5.1f%s ns/double" % (p.GetTitle(), ax.GetBinLabel(b), p.GetBinContent(b), (" +/- %4.1f" % p.GetBinError(b)) if p.GetBinEntries(b)>1 else ""))
+    if maxns is not None: p.SetMaximum(maxns)
     if not i: p.Draw("bar text0")
     else:     p.Draw("bar text0 same")
     if legends and i<len(legends): leg.AddEntry(p,legends[i],"f")
