@@ -771,7 +771,6 @@ inline /*static*/ bool TTreeIterator::BranchValue::SetValueAddress (BranchValue*
     ibranch->fHaveAddr = false;
 #ifdef USE_GETENTRY
     ibranch->EnableReset();
-    ibranch->fSet = false;
 #endif
     return false;
   }
