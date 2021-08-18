@@ -119,7 +119,15 @@ public:
     template <typename T> static void SetDefaultValue (BranchValue* ibranch);
     template <typename T> static bool SetValueAddress (BranchValue* ibranch, bool redo=false);
 
+#ifndef USE_GETENTRY
     Int_t GetBranch (Long64_t index, Long64_t localIndex) const;
+#else
+    void  Enable()      { if ( (fWasDisabled = fBranch->TestBit(kDoNotProcess))) SetBranchStatus ( true); }
+    void  EnableReset() { if (  fWasDisabled)                                    SetBranchStatus (false); }
+    void Disable()      { if (!(fWasDisabled = fBranch->TestBit(kDoNotProcess))) SetBranchStatus (false); }
+    void DisableReset() { if (! fWasDisabled)                                    SetBranchStatus ( true); }
+    void SetBranchStatus (bool status=true) { TTreeIterator::SetBranchStatus (fBranch, status, true, verbose()); }
+#endif
     void ResetAddress();
 
     std::string       fName;
@@ -137,6 +145,11 @@ public:
     bool              fHaveAddr = false;
     bool              fUnset    = false;
     bool              fIsObj    = false;
+#ifndef USE_GETENTRY
+    mutable Long64_t  fLastGet = -1;
+#else
+    bool              fWasDisabled = false;
+#endif
   };
 
   // ===========================================================================
@@ -258,10 +271,20 @@ public:
       return Branch<T> (name, leaflist, bufsize, splitlevel);
     }
 
+#ifndef USE_GETENTRY
+    Entry& LoadTree(Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
+#else
     Entry& LoadTree (Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
+#endif
 
     BranchValue_iterator begin() const { return BranchValue_iterator (*this, 0);                       }
     BranchValue_iterator end()   const { return BranchValue_iterator (*this, tree().fBranches.size()); }
+
+#ifndef USE_GETENTRY
+    Long64_t fLocalIndex=-1;
+#else
+    Long64_t fIndex;
+#endif
 
     // common accessors
     Long64_t          index()   const { return fIndex;           }
@@ -296,7 +319,11 @@ public:
     Entry_iterator  operator++(int) { Entry_iterator it = *this; ++fIndex; return it; }
     bool operator!= (const Entry_iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const Entry_iterator& other) const { return fIndex == other.fIndex; }
+#ifndef USE_GETENTRY
     const Entry& operator*() const { return fEntry.LoadTree (fIndex < fEnd ? fIndex : -1); }
+#else
+    const Entry& operator*() const { fEntry.fIndex = fIndex < fEnd ? fIndex : -1; fEntry.GetEntry(); return fEntry; }
+#endif
     Long64_t last() { return fEnd; }
 
     Int_t GetEntry (Int_t getall=0) { return tree().GetEntry (fIndex, getall); }
@@ -308,7 +335,9 @@ public:
     TTree*          GetTree() const { return fTreeI.GetTree(); }
 
   protected:
+#ifndef USE_GETENTRY
     friend BranchValue;
+#endif
     friend Entry;
 
     Long64_t fIndex;
@@ -414,6 +443,13 @@ public:
   Entry_iterator end();
   Fill_iterator FillEntries (Long64_t nfill=-1);
 
+#ifdef USE_GETENTRY
+  // Set the status for a branch and all its sub-branches.
+  void SetBranchStatusAll (bool status=true, bool include_children=true) {
+    SetBranchStatus (fTree->GetListOfBranches(), status, include_children, fVerbose);
+  }
+
+#endif
   // Convenience function to return the type name
   template <typename T> static const char* tname(const char* name=0);
   template <typename T> static T type_default() { return T(); }
@@ -435,6 +471,10 @@ protected:
 
   // internal methods
   void Init (TDirectory* dir=nullptr, bool owned=true);
+#ifdef USE_GETENTRY
+  static void SetBranchStatus (TObjArray* list, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
+  static void SetBranchStatus (TBranch* branch, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
+#endif
   static void BranchNames (std::vector<std::string>& allbranches, TObjArray* list, bool include_children, bool include_inactive, const std::string& pre="");
 
   // Hack to allow access to protected method TTree::CheckBranchAddressType()
