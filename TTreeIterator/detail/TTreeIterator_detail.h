@@ -312,7 +312,6 @@ template <typename T>
 inline TTreeIterator::BranchValue* TTreeIterator::GetBranch (const char* name, Long64_t index, Long64_t localIndex) const {
   if (index < 0) return nullptr;
   BranchValue* ibranch = GetBranchValue<T> (name);
-#ifndef USE_GETENTRY
   if (!ibranch) {
     ibranch = NewBranchValue<T> (name, type_default<T>());
     if (!GetTree()) {
@@ -321,42 +320,35 @@ inline TTreeIterator::BranchValue* TTreeIterator::GetBranch (const char* name, L
     } else if (TBranch* branch = GetTree()->GetBranch(name)) {
       ibranch->fBranch = branch;
       if (!ibranch->SetBranchAddress<T>()) return nullptr;
+#ifdef USE_GETENTRY
+#ifndef OVERRIDE_BRANCH_ADDRESS
+      if (ibranch->fPuser) return ibranch;  // already read value
+#endif
+      Int_t nread = branch->GetEntry (index);
+      if (nread < 0) {
+        if (verbose() >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, index);
+        return nullptr;
+      } else if (nread == 0) {
+        if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index);
+        return nullptr;
+      } else {
+#ifndef NO_BranchValue_STATS
+        fTotRead += nread;
+#endif
+        if (verbose() >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index);
+      }
+#endif
     } else {
       if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
       return nullptr;
     }
   }
+#ifndef USE_GETENTRY
   Int_t nread = ibranch->GetBranch (index, localIndex);
   if (nread < 0) return nullptr;
 #ifndef NO_BranchValue_STATS
   fTotRead += nread;
 #endif
-
-#else
-
-  if (ibranch) return ibranch;
-  ibranch = SetBranchValue<T> (name, type_default<T>());
-  if (!GetTree()) {
-    if (verbose() >= 0) Error (tname<T>("Get"), "no tree available");
-  } else if (TBranch* branch = GetTree()->GetBranch(name)) {
-    ibranch->fBranch = branch;
-    if (!ibranch->SetBranchAddress<T>()) return nullptr;
-#ifndef OVERRIDE_BRANCH_ADDRESS
-    if (ibranch->fPuser) return ibranch;  // already read value
-#endif
-    Int_t nread = branch->GetEntry (index());
-    if (nread < 0) {
-      if (verbose() >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, index());
-    } else if (nread == 0) {
-      if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
-    } else {
-      iter().fTotRead += nread;
-      if (verbose() >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
-      return ibranch;
-    }
-  } else {
-    if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
-  }
 #endif
   return ibranch;
 }
