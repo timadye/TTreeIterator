@@ -12,13 +12,7 @@
 // TTreeIterator ===============================================================
 
 inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=true*/) {
-#ifndef USE_GETENTRY
   if (owned) {
-#else
-  if (!owned) {
-    SetBranchStatusAll(false);
-  } else {
-#endif
     if (!dir) dir = gDirectory;
     if ( dir) dir->GetObject(GetName(), fTree);
     if (!fTree) {
@@ -29,12 +23,12 @@ inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=tr
       fTree = new TTree(GetName(),"",99,dir);
     } else {
       SetTitle(fTree->GetTitle());
-#ifdef USE_GETENTRY
-      SetBranchStatusAll(false);
-#endif
     }
     fTreeOwned = true;
   }
+#ifdef USE_GETENTRY
+  SetBranchStatusAll(false);
+#endif
 }
 
 
@@ -96,11 +90,7 @@ inline TTreeIterator::~TTreeIterator() /*override*/ {
 
 
 // std::iterator interface
-#ifndef USE_GETENTRY
 inline TTreeIterator::Entry_iterator TTreeIterator::begin() {
-#else
-inline TTreeIterator::iterator TTreeIterator::begin() {
-#endif
   Long64_t last = GetTree() ? GetTree()->GetEntries() : 0;
   if (verbose() >= 1 && last>0 && GetTree()->GetDirectory())
     Info ("TTreeIterator", "get %lld entries from tree '%s' in file %s", last, GetTree()->GetName(), GetTree()->GetDirectory()->GetName());
@@ -108,11 +98,7 @@ inline TTreeIterator::iterator TTreeIterator::begin() {
 }
 
 
-#ifndef USE_GETENTRY
 inline TTreeIterator::Entry_iterator TTreeIterator::end()   {
-#else
-inline TTreeIterator::iterator TTreeIterator::end()   {
-#endif
   Long64_t last = GetTree() ? GetTree()->GetEntries() : 0;
   return Entry_iterator (*this, last, last);
 }
@@ -317,9 +303,8 @@ inline /*static*/ void TTreeIterator::SetBranchStatus (TBranch* branch, bool sta
     SetBranchStatus (branch->GetListOfBranches(), status, include_children, verbose);
   }
 }
-
-
 #endif
+
 
 // TTreeIterator protected ========================================================
 
@@ -336,11 +321,23 @@ inline TTreeIterator::BranchValue* TTreeIterator::GetBranch (const char* name, L
     } else if (TBranch* branch = GetTree()->GetBranch(name)) {
       ibranch->fBranch = branch;
       if (!ibranch->SetBranchAddress<T>()) return nullptr;
+    } else {
+      if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
+      return nullptr;
+    }
+  }
+  Int_t nread = ibranch->GetBranch (index, localIndex);
+  if (nread < 0) return nullptr;
+#ifndef NO_BranchValue_STATS
+  fTotRead += nread;
+#endif
+
 #else
+
   if (ibranch) return ibranch;
   ibranch = SetBranchValue<T> (name, type_default<T>());
   if (!GetTree()) {
-    if (verbose() >= 0) tree().Error (tname<T>("Get"), "no tree available");
+    if (verbose() >= 0) Error (tname<T>("Get"), "no tree available");
   } else if (TBranch* branch = GetTree()->GetBranch(name)) {
     ibranch->fBranch = branch;
     if (!ibranch->SetBranchAddress<T>()) return nullptr;
@@ -349,31 +346,17 @@ inline TTreeIterator::BranchValue* TTreeIterator::GetBranch (const char* name, L
 #endif
     Int_t nread = branch->GetEntry (index());
     if (nread < 0) {
-      if (verbose() >= 0) tree().Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, index());
+      if (verbose() >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, index());
     } else if (nread == 0) {
-      if (verbose() >= 0) tree().Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
-#endif
+      if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
     } else {
-#ifndef USE_GETENTRY
-      if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
-      return nullptr;
-#else
       iter().fTotRead += nread;
-      if (verbose() >= 1) tree().Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
+      if (verbose() >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index());
       return ibranch;
-#endif
     }
-#ifdef USE_GETENTRY
   } else {
-    if (verbose() >= 0) tree().Error (tname<T>("Get"), "branch '%s' not found", name);
-#endif
+    if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
   }
-#ifndef USE_GETENTRY
-  Int_t nread = ibranch->GetBranch (index, localIndex);
-  if (nread < 0) return nullptr;
-#ifndef NO_BranchValue_STATS
-  fTotRead += nread;
-#endif
 #endif
   return ibranch;
 }

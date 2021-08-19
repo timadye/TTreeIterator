@@ -139,7 +139,6 @@ public:
 #endif
     TBranch*          fBranch   = nullptr;
     TTreeIterator&    fTreeI;
-    mutable Long64_t  fLastGet  = -1;
     SetDefaultValue_t fSetDefaultValue;    // function to set value to the default
     SetValueAddress_t fSetValueAddress;    // function to set the address again
     bool              fHaveAddr = false;
@@ -271,20 +270,10 @@ public:
       return Branch<T> (name, leaflist, bufsize, splitlevel);
     }
 
-#ifndef USE_GETENTRY
-    Entry& LoadTree(Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
-#else
     Entry& LoadTree (Long64_t index) { fIndex = index; fLocalIndex = GetTree()->LoadTree (index); return *this; }
-#endif
 
     BranchValue_iterator begin() const { return BranchValue_iterator (*this, 0);                       }
     BranchValue_iterator end()   const { return BranchValue_iterator (*this, tree().fBranches.size()); }
-
-#ifndef USE_GETENTRY
-    Long64_t fLocalIndex=-1;
-#else
-    Long64_t fIndex;
-#endif
 
     // common accessors
     Long64_t          index()   const { return fIndex;           }
@@ -335,9 +324,7 @@ public:
     TTree*          GetTree() const { return fTreeI.GetTree(); }
 
   protected:
-#ifndef USE_GETENTRY
     friend BranchValue;
-#endif
     friend Entry;
 
     Long64_t fIndex;
@@ -448,8 +435,8 @@ public:
   void SetBranchStatusAll (bool status=true, bool include_children=true) {
     SetBranchStatus (fTree->GetListOfBranches(), status, include_children, fVerbose);
   }
-
 #endif
+
   // Convenience function to return the type name
   template <typename T> static const char* tname(const char* name=0);
   template <typename T> static T type_default() { return T(); }
