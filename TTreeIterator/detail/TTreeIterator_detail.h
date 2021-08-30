@@ -320,35 +320,15 @@ inline TTreeIterator::BranchValue* TTreeIterator::GetBranch (const char* name, L
     } else if (TBranch* branch = GetTree()->GetBranch(name)) {
       ibranch->fBranch = branch;
       if (!ibranch->SetBranchAddress<T>()) return nullptr;
-#ifdef USE_TTREE_GETENTRY
-#ifndef OVERRIDE_BRANCH_ADDRESS
-      if (ibranch->fPuser) return ibranch;  // already read value
-#endif
-      Int_t nread = branch->GetEntry (index);
-      if (nread < 0) {
-        if (verbose() >= 0) Error (tname<T>("Get"), "GetEntry failed for branch '%s', entry %lld", name, index);
-        return nullptr;
-      } else if (nread == 0) {
-        if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index);
-        return nullptr;
-      } else {
-#ifndef NO_BranchValue_STATS
-        fTotRead += nread;
-#endif
-        if (verbose() >= 1) Info (tname<T>("Get"), "branch '%s' read %d bytes from entry %lld", name, nread, index);
-      }
-#endif
     } else {
       if (verbose() >= 0) Error (tname<T>("Get"), "branch '%s' not found", name);
       return nullptr;
     }
   }
-#ifndef USE_TTREE_GETENTRY
   Int_t nread = ibranch->GetBranch (index, localIndex);
   if (nread < 0) return nullptr;
 #ifndef NO_BranchValue_STATS
   fTotRead += nread;
-#endif
 #endif
   return ibranch;
 }
@@ -609,16 +589,17 @@ inline void TTreeIterator::BranchValue::CreateBranch (const char* leaflist, Int_
 }
 
 
-#ifndef USE_TTREE_GETENTRY
 inline Int_t TTreeIterator::BranchValue::GetBranch (Long64_t index, Long64_t localIndex) const {
   if (!fHaveAddr) return -1;
 #ifndef OVERRIDE_BRANCH_ADDRESS
   if (fPuser) return 0;  // already read value
 #endif
+#ifndef USE_TTREE_GETENTRY
   if (fLastGet == index) {
     if (verbose() >= 3) tree().Info  ("GetBranch", "branch '%s' already read from entry %lld",           GetName(),        index);
     return 0;
   }
+#endif
   Int_t nread = fBranch->GetEntry (localIndex, 1);
   if (nread < 0) {
     if (verbose() >= 0) tree().Error ("GetBranch", "GetEntry failed for branch '%s', entry %lld (%lld)", GetName(),        index, localIndex);
@@ -626,13 +607,16 @@ inline Int_t TTreeIterator::BranchValue::GetBranch (Long64_t index, Long64_t loc
     if (verbose() >= 0) tree().Error ("GetBranch", "branch '%s' read %d bytes from entry %lld (%lld)",   GetName(), nread, index, localIndex);
   } else {
     if (verbose() >= 1) tree().Info  ("GetBranch", "branch '%s' read %d bytes from entry %lld (%lld)",   GetName(), nread, index, localIndex);
+#ifndef USE_TTREE_GETENTRY
     fLastGet = index;
+#endif
     return nread;
   }
+#ifndef USE_TTREE_GETENTRY
   fLastGet = -1;
+#endif
   return -1;
 }
-#endif
 
 
 template <typename T>

@@ -126,9 +126,8 @@ public:
     void Disable()      { if (!(fWasDisabled = fBranch->TestBit(kDoNotProcess))) SetBranchStatus (false); }
     void DisableReset() { if (! fWasDisabled)                                    SetBranchStatus ( true); }
     void SetBranchStatus (bool status=true) { TTreeIterator::SetBranchStatus (fBranch, status, true, verbose()); }
-#else
-    Int_t GetBranch (Long64_t index, Long64_t localIndex) const;
 #endif
+    Int_t GetBranch (Long64_t index, Long64_t localIndex) const;
     void ResetAddress();
 
     std::string       fName;
@@ -252,7 +251,7 @@ public:
     template <typename T>
     const T& Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
 
-    Int_t GetEntry (Int_t getall=0) { return tree().GetEntry (fIndex, getall); }
+    Int_t GetEntry (Int_t getall=0) { Int_t nb = tree().GetEntry (fIndex, getall); fLocalIndex = tree().GetReadEntry(); return nb; }
     Int_t Fill() { Int_t nbytes = tree().Fill(); if (nbytes > 0) fWriting = true; return nbytes; }
 
     Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0) {
@@ -315,8 +314,6 @@ public:
     const Entry& operator*() const { return fEntry.LoadTree (fIndex < fEnd ? fIndex : -1); }
 #endif
     Long64_t last() { return fEnd; }
-
-    Int_t GetEntry (Int_t getall=0) { return tree().GetEntry (fIndex, getall); }
 
     // common accessors
     Long64_t        index()   const { return fIndex;           }
