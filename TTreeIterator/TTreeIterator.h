@@ -251,7 +251,7 @@ public:
     template <typename T>
     const T& Set(const char* name, T&& val, const char* leaflist, Int_t bufsize, Int_t splitlevel);
 
-    Int_t GetEntry (Int_t getall=0) { Int_t nb = tree().GetEntry (fIndex, getall); fLocalIndex = tree().GetReadEntry(); return nb; }
+    Int_t GetEntry (Int_t getall=0) { Int_t nb = tree().GetEntry (fIndex, getall); fLocalIndex = GetTree()->GetReadEntry(); return nb; }
     Int_t Fill() { Int_t nbytes = tree().Fill(); if (nbytes > 0) fWriting = true; return nbytes; }
 
     Int_t Write (const char* name=0, Int_t option=0, Int_t bufsize=0) {
