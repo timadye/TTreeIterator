@@ -15,6 +15,7 @@ class TDirectory;
 
 // define some different implementation methods to compare for speed:
 //#define FEWER_CHECKS 1             // skip sanity/debug checks on every entry
+//#define USE_TTREE_GETENTRY         // use TTree::GetEntry on each iteration, rather than TBranch::GetEntry for each access.
 //#define OVERRIDE_BRANCH_ADDRESS 1  // override any other user SetBranchAddress settings
 //#define PREFER_PTRPTR 1            // for filling ROOT objects, tree->Branch() uses **obj, rather than *obj
 //#define NO_FILL_UNSET_DEFAULT 1    // don't set default values if unset
@@ -119,14 +120,14 @@ public:
     template <typename T> static void SetDefaultValue (BranchValue* ibranch);
     template <typename T> static bool SetValueAddress (BranchValue* ibranch, bool redo=false);
 
-#ifndef USE_GETENTRY
-    Int_t GetBranch (Long64_t index, Long64_t localIndex) const;
-#else
+#ifdef USE_TTREE_GETENTRY
     void  Enable()      { if ( (fWasDisabled = fBranch->TestBit(kDoNotProcess))) SetBranchStatus ( true); }
     void  EnableReset() { if (  fWasDisabled)                                    SetBranchStatus (false); }
     void Disable()      { if (!(fWasDisabled = fBranch->TestBit(kDoNotProcess))) SetBranchStatus (false); }
     void DisableReset() { if (! fWasDisabled)                                    SetBranchStatus ( true); }
     void SetBranchStatus (bool status=true) { TTreeIterator::SetBranchStatus (fBranch, status, true, verbose()); }
+#else
+    Int_t GetBranch (Long64_t index, Long64_t localIndex) const;
 #endif
     void ResetAddress();
 
@@ -139,16 +140,16 @@ public:
 #endif
     TBranch*          fBranch   = nullptr;
     TTreeIterator&    fTreeI;
+#ifdef USE_TTREE_GETENTRY
+    bool              fWasDisabled = false;
+#else
+    mutable Long64_t  fLastGet  = -1;
+#endif
     SetDefaultValue_t fSetDefaultValue;    // function to set value to the default
     SetValueAddress_t fSetValueAddress;    // function to set the address again
     bool              fHaveAddr = false;
     bool              fUnset    = false;
     bool              fIsObj    = false;
-#ifndef USE_GETENTRY
-    mutable Long64_t  fLastGet = -1;
-#else
-    bool              fWasDisabled = false;
-#endif
   };
 
   // ===========================================================================
@@ -308,10 +309,10 @@ public:
     Entry_iterator  operator++(int) { Entry_iterator it = *this; ++fIndex; return it; }
     bool operator!= (const Entry_iterator& other) const { return fIndex != other.fIndex; }
     bool operator== (const Entry_iterator& other) const { return fIndex == other.fIndex; }
-#ifndef USE_GETENTRY
-    const Entry& operator*() const { return fEntry.LoadTree (fIndex < fEnd ? fIndex : -1); }
-#else
+#ifdef USE_TTREE_GETENTRY
     const Entry& operator*() const { fEntry.fIndex = fIndex < fEnd ? fIndex : -1; fEntry.GetEntry(); return fEntry; }
+#else
+    const Entry& operator*() const { return fEntry.LoadTree (fIndex < fEnd ? fIndex : -1); }
 #endif
     Long64_t last() { return fEnd; }
 
@@ -430,7 +431,7 @@ public:
   Entry_iterator end();
   Fill_iterator FillEntries (Long64_t nfill=-1);
 
-#ifdef USE_GETENTRY
+#ifdef USE_TTREE_GETENTRY
   // Set the status for a branch and all its sub-branches.
   void SetBranchStatusAll (bool status=true, bool include_children=true) {
     SetBranchStatus (fTree->GetListOfBranches(), status, include_children, fVerbose);
@@ -458,7 +459,7 @@ protected:
 
   // internal methods
   void Init (TDirectory* dir=nullptr, bool owned=true);
-#ifdef USE_GETENTRY
+#ifdef USE_TTREE_GETENTRY
   static void SetBranchStatus (TObjArray* list, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
   static void SetBranchStatus (TBranch* branch, bool status=true, bool include_children=true, int verbose=0, const std::string* pre=nullptr);
 #endif
