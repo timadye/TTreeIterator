@@ -312,7 +312,12 @@ template <typename T>
 inline TTreeIterator::BranchValue* TTreeIterator::GetBranch (const char* name, Long64_t index, Long64_t localIndex) const {
   if (index < 0) return nullptr;
   BranchValue* ibranch = GetBranchValue<T> (name);
-  if (!ibranch) {
+#ifdef USE_TTREE_GETENTRY
+  if (ibranch) return ibranch;
+#else
+  if (ibranch) ;
+#endif
+  else {
     ibranch = NewBranchValue<T> (name, type_default<T>());
     if (!GetTree()) {
       if (verbose() >= 0) Error (tname<T>("Get"), "no tree available");

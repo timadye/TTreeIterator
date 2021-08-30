@@ -146,7 +146,7 @@ TEST(iterTests1, GetIter) {
   for (auto& entry : iter) {
     Long64_t i=entry.index();
     std::string s = entry["s"];
-    std::string ss = entry["ss"];
+    std::string ss = i>0 ? entry["ss"] : std::string();
     std::pair<std::string,int> p = entry["p"];
     std::tuple<std::string,std::string,double,float> t = entry["t"];
     MyStruct M = entry["M"];
