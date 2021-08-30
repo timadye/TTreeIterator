@@ -7,6 +7,7 @@ for o in "$@"; do
     -Rcode|-Rheap|-Rstack|-Rlink|-fopt=*) SZCFLAGS+=("$o");;
     -szc) SZC=1;;
     -O*) OFLAG="${o#-O}";;
+    -i) PROG=iterTests EXE=TestIter;;
     *) OPTS+=("$o");;
   esac
 done
@@ -26,7 +27,7 @@ EXEOUT=$(readlink -e "$EXE")
 [ -f "$BUILD_DIR/lib/libgtestd.a" ] && gtest="gtestd" || gtest="gtest"
 
 CXXFLAGS="$(root-config --cflags) -I$SRCDIR -DNO_DICT=1"
-LDFLAGS="$(root-config --ldflags --libs) -O2 -L$BUILD_DIR/lib -l$gtest"
+LDFLAGS="$(root-config --ldflags --libs) -lROOTTPython -O2 -L$BUILD_DIR/lib -l$gtest"
 
 set -x
 mkdir -p obj

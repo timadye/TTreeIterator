@@ -265,7 +265,12 @@ TEST(iterTests2, GetAddr) {
     else          EXPECT_EQ (s, std::string());
     if (i >= 2) { EXPECT_EQ (M, MyStruct3(v,v+1,v+2,int(v+3))); v+=4; }
     else          EXPECT_EQ (M, MyStruct3());
-    if (i >= 1) { EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v)); v++; }
+    if (i >= 1) {
+#ifndef NO_DICT
+      EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v));
+#endif
+      v++;
+    }
     else        { TestObj t; EXPECT_EQ (o.value, t.value); EXPECT_STREQ (o.GetName(), t.GetName()); }
 #endif
   }
@@ -341,7 +346,12 @@ TEST(iterTests2, GetIter) {
     else          EXPECT_EQ (s, std::string());
     if (i >= 2) { EXPECT_EQ (M, MyStruct3(v,v+1,v+2,int(v+3))); v+=4; }
     else          EXPECT_EQ (M, TTreeIterator::type_default<MyStruct3>());
-    if (i >= 1) { EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v)); v++; }
+    if (i >= 1) {
+#ifndef NO_DICT
+      EXPECT_EQ (o.value, v); EXPECT_STREQ (o.GetName(), Form("n:%g",v));
+#endif
+      v++;
+    }
     else        { TestObj t; EXPECT_EQ (o.value, t.value); EXPECT_STREQ (o.GetName(), t.GetName()); }
 #endif
   }

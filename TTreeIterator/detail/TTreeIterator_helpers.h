@@ -147,7 +147,9 @@ public:
 
   const char* ContentsAsString() const { return Form("%g",value); }
   Double_t value=-1.0;
-  ClassDefOverride(TestObj,1)
+#ifndef NO_DICT
+  ClassDefOverride(TestObj,1);
+#endif
 };
 
 #endif /* ROOT_TTreeIterator_helpers */
