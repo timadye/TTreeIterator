@@ -21,10 +21,11 @@ inline void TTreeIterator::Init (TDirectory* dir /* =nullptr */, bool owned/*=tr
         return;
       }
       fTree = new TTree(GetName(),"",99,dir);
+      if (!dir) fTreeOwned = true;
+      // else fTree is owned by the TDirectory, so we don't need to worry about deleting it
     } else {
       SetTitle(fTree->GetTitle());
     }
-    fTreeOwned = true;
   }
 #ifdef USE_TTREE_GETENTRY
   SetBranchStatusAll(false);

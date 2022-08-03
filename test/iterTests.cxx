@@ -243,7 +243,7 @@ TEST(iterTests2, GetAddr) {
   TFile f ("iterTests2.root");
   ASSERT_FALSE(f.IsZombie()) << "no file";
 
-  std::unique_ptr<TTree> tree (f.Get<TTree>("test"));
+  TTree* tree = f.Get<TTree>("test");
   ASSERT_TRUE(tree) << "no tree";
   EXPECT_EQ(tree->GetEntries(), nfill2-1);
   double a;
@@ -479,7 +479,7 @@ TEST(iterTests4, GetAddr) {
   TH2D hxy ("vxy", "vxy", 48, -6, 6, 32, -4, 4);
   TH1D hz  ("vz",  "vz",  100, -200, 200);
 
-  std::unique_ptr<TTree> tree (file.Get<TTree>("xyz"));
+  TTree* tree = file.Get<TTree>("xyz");
 
   double vx, vy, vz;
   tree->SetBranchAddress("vx",&vx);

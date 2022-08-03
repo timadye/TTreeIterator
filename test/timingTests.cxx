@@ -300,14 +300,14 @@ TEST(timingTests1, GetAddr) {
   TFile file ("test_timing1.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  std::unique_ptr<TTree> tree (file.Get<TTree>("test"));
+  TTree* tree = file.Get<TTree>("test");
   ASSERT_TRUE(tree) << "no tree";
   EXPECT_EQ(tree->GetEntries(), nfill1);
-  Int_t nbranches = ShowBranches (file, tree.get(), branch_type1);
+  Int_t nbranches = ShowBranches (file, tree, branch_type1);
   EXPECT_EQ(nbranches, nx1);
 
   std::vector<double> vals(nx1);
-  StartTimer timer (tree.get());
+  StartTimer timer (tree);
   for (size_t i=0; i<nx1; i++) tree->SetBranchAddress (Form("x%03zu",i), &vals[i]);
 
   double v = vinit, vsum=0.0;
@@ -439,14 +439,14 @@ TEST(timingTests2, GetAddr) {
   TFile file ("test_timing2.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  std::unique_ptr<TTree> tree (file.Get<TTree>("test"));
+  TTree* tree = file.Get<TTree>("test");
   ASSERT_TRUE(tree) << "no tree";
   EXPECT_EQ(tree->GetEntries(), nfill2);
-  Int_t nbranches = ShowBranches (file, tree.get(), branch_type2);
+  Int_t nbranches = ShowBranches (file, tree, branch_type2);
   EXPECT_EQ(nbranches, 1);
 
   MyStruct M;
-  StartTimer timer (tree.get(), false, nx2);
+  StartTimer timer (tree, false, nx2);
   tree->SetBranchAddress ("M", &M);
   double v = vinit, vsum=0.0;
   Long64_t n = tree->GetEntries();
@@ -570,14 +570,14 @@ TEST(timingTests3, GetAddr) {
   TFile file ("test_timing3.root");
   ASSERT_FALSE(file.IsZombie()) << "no file";
 
-  std::unique_ptr<TTree> tree (file.Get<TTree>("test"));
+  TTree* tree = file.Get<TTree>("test");
   ASSERT_TRUE(tree) << "no tree";
   EXPECT_EQ(tree->GetEntries(), nfill3);
-  Int_t nbranches = ShowBranches (file, tree.get(), branch_type3);
+  Int_t nbranches = ShowBranches (file, tree, branch_type3);
   EXPECT_EQ(nbranches, 1);
 
   std::vector<double>* vx = 0;
-  StartTimer timer (tree.get(), false, nx3);
+  StartTimer timer (tree, false, nx3);
   tree->SetBranchAddress ("vx", &vx);
   double v = vinit, vsum=0.0;
   Long64_t n = tree->GetEntries();
